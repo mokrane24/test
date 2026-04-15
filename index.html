@@ -2,871 +2,200 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#667eea">
-    <meta name="description" content="Application PWA pour scanner et lire automatiquement le poids sur des balances industrielles via la caméra smartphone">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Balance Scanner">
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%23667eea' width='180' height='180'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='central'>⚖️</text></svg>">
-    <title>Scanner de Balance Professionnel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lecteur de Balance</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --bg: #f3f4f6;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+            background-color: var(--bg);
             display: flex;
             flex-direction: column;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 600px;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            height: 100vh;
             overflow: hidden;
         }
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px 20px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
-        }
-
-        .header p {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-
-        .content {
-            padding: 30px 20px;
-        }
-
-        /* Section Caméra */
-        .camera-section {
-            margin-bottom: 30px;
-        }
-
-        #video-container {
+        /* Zone Caméra */
+        #camera-container {
             position: relative;
-            width: 100%;
-            aspect-ratio: 4/3;
+            flex: 1;
             background: #000;
-            border-radius: 15px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            margin-bottom: 15px;
         }
 
         video {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            display: block;
         }
 
+        /* Rectangle de visée */
         .overlay {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             width: 85%;
-            height: 35%;
-            border: 3px solid #00ff00;
-            border-radius: 10px;
-            box-sizing: border-box;
+            height: 40%;
+            border: 4px solid #00ff00;
+            border-radius: 12px;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.5);
             pointer-events: none;
-            box-shadow: inset 0 0 30px rgba(0, 255, 0, 0.3);
-            background: rgba(0, 255, 0, 0.05);
         }
 
-        .overlay::before {
-            content: '';
-            position: absolute;
-            top: -20px;
-            left: 0;
-            right: 0;
-            height: 20px;
-            background: repeating-linear-gradient(90deg, #00ff00, #00ff00 2px, transparent 2px, transparent 4px);
-            opacity: 0.5;
+        /* Zone de contrôle */
+        .ui-panel {
+            background: white;
+            padding: 20px;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.1);
+            text-align: center;
         }
 
-        .overlay::after {
-            content: '';
-            position: absolute;
-            bottom: -20px;
-            left: 0;
-            right: 0;
-            height: 20px;
-            background: repeating-linear-gradient(90deg, #00ff00, #00ff00 2px, transparent 2px, transparent 4px);
-            opacity: 0.5;
-        }
-
-        /* Contrôles */
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+        .result-display {
+            font-size: 3rem;
+            font-weight: bold;
+            font-family: monospace;
+            color: #1f2937;
+            margin-bottom: 15px;
+            min-height: 4.5rem;
         }
 
         button {
-            flex: 1;
-            padding: 14px 20px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        #capture-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            flex: 2;
-        }
-
-        #capture-btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        #capture-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        #debug-btn {
-            background: #f39c12;
-            color: white;
-            padding: 14px 20px;
-        }
-
-        #debug-btn:hover {
-            background: #e67e22;
-        }
-
-        /* Résultats */
-        .result-section {
-            background: #f8f9fa;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .result-label {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .result-value {
-            font-size: 48px;
-            font-weight: bold;
-            color: #333;
-            font-family: 'Courier New', monospace;
-            letter-spacing: 3px;
-        }
-
-        .result-value.success {
-            color: #27ae60;
-        }
-
-        .result-value.error {
-            color: #e74c3c;
-        }
-
-        .result-confidence {
-            font-size: 12px;
-            color: #999;
-            margin-top: 8px;
-        }
-
-        /* Statut */
-        .status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px 15px;
-            background: #e8f4f8;
-            border-left: 4px solid #3498db;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            color: #2c3e50;
-        }
-
-        .status.loading {
-            background: #fff3cd;
-            border-left-color: #ffc107;
-        }
-
-        .status.success {
-            background: #d4edda;
-            border-left-color: #28a745;
-        }
-
-        .status.error {
-            background: #f8d7da;
-            border-left-color: #dc3545;
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #3498db;
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Debug Panel */
-        .debug-panel {
-            display: none;
-            background: #1e1e1e;
-            color: #00ff00;
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 20px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-            border: 1px solid #00ff00;
-        }
-
-        .debug-panel.active {
-            display: block;
-        }
-
-        .debug-line {
-            margin: 5px 0;
-            line-height: 1.4;
-        }
-
-        .debug-label {
-            color: #ffff00;
-            font-weight: bold;
-        }
-
-        canvas {
-            display: none;
-        }
-
-        /* Processing Images */
-        .processing-images {
-            display: none;
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 20px;
-        }
-
-        .processing-images.active {
-            display: block;
-        }
-
-        .image-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-
-        .image-item {
-            text-align: center;
-        }
-
-        .image-item-label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 8px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .image-item canvas {
-            display: block;
             width: 100%;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            max-height: 150px;
-        }
-
-        /* History */
-        .history-section {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 20px;
-        }
-
-        .history-title {
-            font-size: 14px;
+            padding: 18px;
+            font-size: 1.2rem;
             font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-            text-transform: uppercase;
+            color: white;
+            background-color: var(--primary);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: opacity 0.2s;
         }
 
-        .history-list {
-            list-style: none;
-            max-height: 200px;
-            overflow-y: auto;
+        button:active { opacity: 0.8; }
+        button:disabled { background-color: #9ca3af; }
+
+        .status-msg {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-top: 10px;
         }
 
-        .history-item {
-            padding: 10px;
-            background: white;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 14px;
-            border-left: 3px solid #3498db;
-        }
-
-        .history-item .value {
-            font-weight: bold;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-        }
-
-        .history-item .time {
-            font-size: 12px;
-            color: #999;
-        }
-
-        /* Responsive */
-        @media (max-width: 480px) {
-            .header h1 {
-                font-size: 24px;
-            }
-
-            .result-value {
-                font-size: 40px;
-            }
-
-            .content {
-                padding: 20px 15px;
-            }
-        }
+        canvas { display: none; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div class="header">
-            <h1>⚖️ Scanner de Balance</h1>
-            <p>Scan automatique du poids via la caméra</p>
-        </div>
-
-        <div class="content">
-            <!-- Section Caméra -->
-            <div class="camera-section">
-                <div id="video-container">
-                    <video id="webcam" autoplay playsinline></video>
-                    <div class="overlay"></div>
-                </div>
-
-                <div class="controls">
-                    <button id="capture-btn">📷 Scanner le poids</button>
-                    <button id="debug-btn">🔍 Debug</button>
-                </div>
-            </div>
-
-            <!-- Statut -->
-            <div id="status" class="status" style="display: none;">
-                <span class="spinner"></span>
-                <span id="status-text">Initialisation...</span>
-            </div>
-
-            <!-- Résultats -->
-            <div class="result-section">
-                <div class="result-label">Poids détecté</div>
-                <div id="result" class="result-value">--</div>
-                <div id="confidence" class="result-confidence"></div>
-            </div>
-
-            <!-- Panel Debug -->
-            <div id="debug-panel" class="debug-panel"></div>
-
-            <!-- Images de traitement -->
-            <div id="processing-images" class="processing-images">
-                <div style="margin-bottom: 15px;">
-                    <div style="font-weight: bold; margin-bottom: 10px; color: #333;">Étapes de traitement :</div>
-                    <div class="image-grid">
-                        <div class="image-item">
-                            <div class="image-item-label">Original</div>
-                            <canvas id="canvas-original"></canvas>
-                        </div>
-                        <div class="image-item">
-                            <div class="image-item-label">Grayscale</div>
-                            <canvas id="canvas-gray"></canvas>
-                        </div>
-                        <div class="image-item">
-                            <div class="image-item-label">Threshold</div>
-                            <canvas id="canvas-threshold"></canvas>
-                        </div>
-                        <div class="image-item">
-                            <div class="image-item-label">Nettoyé</div>
-                            <canvas id="canvas-clean"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Historique -->
-            <div class="history-section">
-                <div class="history-title">📊 Historique</div>
-                <ul id="history" class="history-list"></ul>
-            </div>
-        </div>
+    <div id="camera-container">
+        <video id="webcam" autoplay playsinline></video>
+        <div class="overlay"></div>
     </div>
 
-    <!-- Canvas cachés pour traitement -->
-    <canvas id="snapshot"></canvas>
-    <canvas id="temp-canvas"></canvas>
+    <div class="ui-panel">
+        <div id="result" class="result-display">-- kg</div>
+        <button id="scan-btn">LIRE LE POIDS</button>
+        <div id="status" class="status-msg">Prêt à scanner</div>
+    </div>
+
+    <canvas id="proc-canvas"></canvas>
 
     <script>
-        // ============================================
-        // CLASSE PRINCIPALE : OCR Scanner
-        // ============================================
-        class BalanceScanner {
-            constructor() {
-                this.video = document.getElementById('webcam');
-                this.captureBtn = document.getElementById('capture-btn');
-                this.debugBtn = document.getElementById('debug-btn');
-                this.resultDiv = document.getElementById('result');
-                this.confidenceDiv = document.getElementById('confidence');
-                this.statusDiv = document.getElementById('status');
-                this.statusText = document.getElementById('status-text');
-                this.debugPanel = document.getElementById('debug-panel');
-                this.processingImages = document.getElementById('processing-images');
-                this.historyList = document.getElementById('history');
+        const video = document.getElementById('webcam');
+        const scanBtn = document.getElementById('scan-btn');
+        const resultDiv = document.getElementById('result');
+        const statusDiv = document.getElementById('status');
+        const canvas = document.getElementById('proc-canvas');
 
-                this.canvas = document.getElementById('snapshot');
-                this.tempCanvas = document.getElementById('temp-canvas');
-
-                this.debugMode = false;
-                this.scanHistory = [];
-                this.maxHistory = 10;
-
-                this.setupEventListeners();
-                this.startCamera();
-
-                // Exposer au contexte global pour accès externe
-                window.balanceScanner = this;
-            }
-
-            setupEventListeners() {
-                this.captureBtn.addEventListener('click', () => this.scan());
-                this.debugBtn.addEventListener('click', () => this.toggleDebug());
-            }
-
-            toggleDebug() {
-                this.debugMode = !this.debugMode;
-                if (this.debugMode) {
-                    this.debugPanel.classList.add('active');
-                    this.processingImages.classList.add('active');
-                } else {
-                    this.debugPanel.classList.remove('active');
-                    this.processingImages.classList.remove('active');
-                }
-            }
-
-            addDebugLog(label, message) {
-                if (!this.debugMode) return;
-                const line = document.createElement('div');
-                line.className = 'debug-line';
-                line.innerHTML = `<span class="debug-label">${label}:</span> ${message}`;
-                this.debugPanel.appendChild(line);
-                this.debugPanel.scrollTop = this.debugPanel.scrollHeight;
-            }
-
-            clearDebugLog() {
-                this.debugPanel.innerHTML = '';
-            }
-
-            setStatus(message, type = 'info') {
-                this.statusDiv.style.display = 'flex';
-                this.statusDiv.className = 'status ' + type;
-                this.statusText.textContent = message;
-
-                if (type !== 'loading') {
-                    setTimeout(() => {
-                        this.statusDiv.style.display = 'none';
-                    }, 3000);
-                }
-            }
-
-            async startCamera() {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            facingMode: 'environment',
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 }
-                        }
-                    });
-                    this.video.srcObject = stream;
-                    this.setStatus('Caméra activée ✓', 'success');
-                } catch (err) {
-                    console.error('Erreur caméra:', err);
-                    this.setStatus('Erreur caméra - Vérifiez les permissions HTTPS', 'error');
-                    alert('Impossible d\'accéder à la caméra. Vérifiez les permissions ou utilisez HTTPS.');
-                }
-            }
-
-            // ============================================
-            // PRÉTRAITEMENT D'IMAGE
-            // ============================================
-
-            drawImageToCanvas(target, sourceVideo, x = 0, y = 0, width = null, height = null) {
-                const ctx = target.getContext('2d');
-                target.width = width || sourceVideo.videoWidth;
-                target.height = height || sourceVideo.videoHeight;
-                ctx.drawImage(sourceVideo, x, y, target.width, target.height, 0, 0, target.width, target.height);
-            }
-
-            toGrayscale(imageData) {
-                const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                    data[i] = data[i + 1] = data[i + 2] = avg;
-                }
-                return imageData;
-            }
-
-            // Threshold adaptatif basé sur l'histogramme
-            adaptiveThreshold(imageData, blockSize = 9) {
-                const data = imageData.data;
-                const width = imageData.width;
-                const height = imageData.height;
-                const result = new ImageData(width, height);
-                const resultData = result.data;
-
-                // Simple threshold à partir de la moyenne
-                let sum = 0;
-                for (let i = 0; i < data.length; i += 4) {
-                    sum += data[i];
-                }
-                const avgThreshold = sum / (width * height);
-
-                for (let i = 0; i < data.length; i += 4) {
-                    const brightness = data[i];
-                    const threshold = avgThreshold * 1.1; // 10% plus haut que la moyenne
-                    const value = brightness > threshold ? 255 : 0;
-                    resultData[i] = resultData[i + 1] = resultData[i + 2] = value;
-                    resultData[i + 3] = 255;
-                }
-
-                return result;
-            }
-
-            // Erosion morphologique (réduit le bruit blanc)
-            erode(imageData, kernel = 3) {
-                const data = imageData.data;
-                const width = imageData.width;
-                const height = imageData.height;
-                const result = new ImageData(width, height);
-                const resultData = result.data;
-                const offset = Math.floor(kernel / 2);
-
-                for (let y = offset; y < height - offset; y++) {
-                    for (let x = offset; x < width - offset; x++) {
-                        let minVal = 255;
-                        for (let ky = -offset; ky <= offset; ky++) {
-                            for (let kx = -offset; kx <= offset; kx++) {
-                                const idx = ((y + ky) * width + (x + kx)) * 4;
-                                minVal = Math.min(minVal, data[idx]);
-                            }
-                        }
-                        const idx = (y * width + x) * 4;
-                        resultData[idx] = resultData[idx + 1] = resultData[idx + 2] = minVal;
-                        resultData[idx + 3] = 255;
-                    }
-                }
-
-                return result;
-            }
-
-            // Dilatation morphologique (remplit les trous noirs)
-            dilate(imageData, kernel = 3) {
-                const data = imageData.data;
-                const width = imageData.width;
-                const height = imageData.height;
-                const result = new ImageData(width, height);
-                const resultData = result.data;
-                const offset = Math.floor(kernel / 2);
-
-                for (let y = offset; y < height - offset; y++) {
-                    for (let x = offset; x < width - offset; x++) {
-                        let maxVal = 0;
-                        for (let ky = -offset; ky <= offset; ky++) {
-                            for (let kx = -offset; kx <= offset; kx++) {
-                                const idx = ((y + ky) * width + (x + kx)) * 4;
-                                maxVal = Math.max(maxVal, data[idx]);
-                            }
-                        }
-                        const idx = (y * width + x) * 4;
-                        resultData[idx] = resultData[idx + 1] = resultData[idx + 2] = maxVal;
-                        resultData[idx + 3] = 255;
-                    }
-                }
-
-                return result;
-            }
-
-            // Nettoyage du bruit
-            cleanNoise(imageData) {
-                return this.dilate(this.erode(imageData, 2), 2);
-            }
-
-            // Augmentation du contraste
-            enhanceContrast(imageData, strength = 1.5) {
-                const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    let val = data[i];
-                    val = ((val - 128) * strength) + 128;
-                    val = Math.max(0, Math.min(255, val));
-                    data[i] = data[i + 1] = data[i + 2] = val;
-                }
-                return imageData;
-            }
-
-            // Redimensionnement intelligent
-            upscaleImage(canvas, scale = 2) {
-                const ctx = this.tempCanvas.getContext('2d');
-                this.tempCanvas.width = canvas.width * scale;
-                this.tempCanvas.height = canvas.height * scale;
-                ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(canvas, 0, 0, this.tempCanvas.width, this.tempCanvas.height);
-                return this.tempCanvas;
-            }
-
-            // ============================================
-            // SCAN ET OCR
-            // ============================================
-
-            async scan() {
-                this.captureBtn.disabled = true;
-                this.setStatus('🔄 Analyse en cours...', 'loading');
-                this.clearDebugLog();
-                this.addDebugLog('SCAN', 'Début du scan');
-
-                try {
-                    // 1. Capturer l'image
-                    this.drawImageToCanvas(this.canvas, this.video);
-                    this.addDebugLog('CAPTURE', `${this.canvas.width}x${this.canvas.height}px`);
-
-                    // Afficher l'original
-                    if (this.debugMode) {
-                        this.drawImageToCanvas(
-                            document.getElementById('canvas-original'),
-                            this.video,
-                            0, 0,
-                            200, 150
-                        );
-                    }
-
-                    // 2. Prétraitement d'image
-                    let ctx = this.canvas.getContext('2d');
-                    let imageData = ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-                    this.addDebugLog('PREPROCESSING', 'Début');
-
-                    // Grayscale
-                    imageData = this.toGrayscale(imageData);
-                    if (this.debugMode) {
-                        ctx.putImageData(imageData, 0, 0);
-                        this.drawCanvasTo(this.canvas, document.getElementById('canvas-gray'), 200, 150);
-                    }
-                    this.addDebugLog('STEP', '✓ Grayscale appliqué');
-
-                    // Threshold adaptatif
-                    imageData = this.adaptiveThreshold(imageData);
-                    if (this.debugMode) {
-                        ctx.putImageData(imageData, 0, 0);
-                        this.drawCanvasTo(this.canvas, document.getElementById('canvas-threshold'), 200, 150);
-                    }
-                    this.addDebugLog('STEP', '✓ Threshold adaptatif');
-
-                    // Nettoyage du bruit
-                    imageData = this.cleanNoise(imageData);
-                    if (this.debugMode) {
-                        ctx.putImageData(imageData, 0, 0);
-                        this.drawCanvasTo(this.canvas, document.getElementById('canvas-clean'), 200, 150);
-                    }
-                    this.addDebugLog('STEP', '✓ Nettoyage du bruit');
-
-                    // Augmentation du contraste
-                    imageData = this.enhanceContrast(imageData, 2);
-                    ctx.putImageData(imageData, 0, 0);
-                    this.addDebugLog('STEP', '✓ Contraste amélioré');
-
-                    // 3. OCR avec configuration optimisée
-                    this.addDebugLog('OCR', 'Lancement de Tesseract.js');
-
-                    const { data: { text, confidence } } = await Tesseract.recognize(
-                        this.canvas,
-                        'eng',
-                        {
-                            tessedit_char_whitelist: '0123456789.,',
-                            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
-                            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
-                        }
-                    );
-
-                    let result = text.trim();
-                    this.addDebugLog('OCR RESULT', `"${result}" (confiance: ${confidence.toFixed(2)})`);
-
-                    // Nettoyage du résultat
-                    result = this.cleanOCRResult(result);
-                    this.addDebugLog('CLEAN', `Résultat final: "${result}"`);
-
-                    if (result && result !== '--') {
-                        this.displayResult(result, confidence);
-                        this.addToHistory(result);
-                        this.setStatus('✓ Poids détecté avec succès', 'success');
-                    } else {
-                        this.displayResult('Illisible', 0);
-                        this.setStatus('⚠️ Impossible de lire le poids', 'error');
-                        this.addDebugLog('ERROR', 'Pas de chiffres détectés');
-                    }
-
-                } catch (error) {
-                    console.error('Erreur:', error);
-                    this.displayResult('Erreur', 0);
-                    this.setStatus('❌ Erreur de traitement', 'error');
-                    this.addDebugLog('ERROR', error.message);
-                } finally {
-                    this.captureBtn.disabled = false;
-                }
-            }
-
-            drawCanvasTo(source, target, width, height) {
-                const ctx = target.getContext('2d');
-                target.width = width;
-                target.height = height;
-                ctx.drawImage(source, 0, 0, source.width, source.height, 0, 0, width, height);
-            }
-
-            cleanOCRResult(text) {
-                // Supprimer les espaces
-                text = text.replace(/\s/g, '');
-                
-                // Garder uniquement les chiffres et les séparateurs
-                text = text.replace(/[^0-9.,]/g, '');
-                
-                // Limiter à un seul point décimal
-                const parts = text.split('.');
-                if (parts.length > 2) {
-                    text = parts[0] + '.' + parts.slice(1).join('');
-                }
-
-                return text;
-            }
-
-            displayResult(value, confidence) {
-                this.resultDiv.textContent = value;
-                this.resultDiv.className = 'result-value';
-
-                if (value === '--' || value === 'Erreur' || value === 'Illisible') {
-                    this.resultDiv.classList.add('error');
-                    this.confidenceDiv.textContent = '';
-                } else {
-                    this.resultDiv.classList.add('success');
-                    this.confidenceDiv.textContent = `Confiance: ${(confidence * 100).toFixed(0)}%`;
-                }
-            }
-
-            addToHistory(value) {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-                this.scanHistory.unshift({ value, time: timeStr });
-                if (this.scanHistory.length > this.maxHistory) {
-                    this.scanHistory.pop();
-                }
-
-                this.updateHistoryUI();
-
-                // Sauvegarder dans localStorage
-                try {
-                    localStorage.setItem('scanHistory', JSON.stringify(this.scanHistory));
-                } catch (e) {
-                    console.warn('Impossible de sauvegarder l\'historique:', e);
-                }
-            }
-
-            updateHistoryUI() {
-                this.historyList.innerHTML = this.scanHistory
-                    .map(item => `
-                        <li class="history-item">
-                            <span class="value">${item.value} kg</span>
-                            <span class="time">${item.time}</span>
-                        </li>
-                    `)
-                    .join('');
+        // Initialisation Caméra
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1280 } }
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                statusDiv.innerText = "Erreur caméra : Vérifiez HTTPS";
+                statusDiv.style.color = "red";
             }
         }
 
-        // ============================================
-        // INITIALISATION
-        // ============================================
-        window.addEventListener('load', () => {
-            // Initialiser le scanner
-            new BalanceScanner();
+        // Prétraitement de l'image pour Tesseract
+        function preprocessImage(ctx, w, h) {
+            const imageData = ctx.getImageData(0, 0, w, h);
+            const data = imageData.data;
 
-            // Enregistrer le Service Worker pour PWA
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('✓ Service Worker enregistré'))
-                    .catch(err => console.log('✗ SW registration échouée:', err));
+            for (let i = 0; i < data.length; i += 4) {
+                // Conversion Gris + Contraste violent
+                const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+                
+                // Si pixel clair (le chiffre LED), on le met en NOIR (car Tesseract lit noir sur blanc)
+                // Si pixel sombre, on le met en BLANC
+                const val = (avg > 140) ? 0 : 255; 
+                
+                data[i] = data[i+1] = data[i+2] = val;
             }
+            ctx.putImageData(imageData, 0, 0);
+        }
 
-            // Sauvegarder l'historique localement
-            const savedHistory = localStorage.getItem('scanHistory');
-            if (savedHistory) {
-                try {
-                    const scanner = window.balanceScanner;
-                    if (scanner) {
-                        scanner.scanHistory = JSON.parse(savedHistory);
-                        scanner.updateHistoryUI();
-                    }
-                } catch (e) {
-                    console.error('Erreur lors du chargement de l\'historique:', e);
+        async function performOCR() {
+            scanBtn.disabled = true;
+            statusDiv.innerText = "Traitement...";
+            resultDiv.style.color = "#9ca3af";
+
+            // 1. Définir la zone de capture (correspond au rectangle vert)
+            const vW = video.videoWidth;
+            const vH = video.videoHeight;
+            const cropW = vW * 0.85;
+            const cropH = vH * 0.40;
+            const cropX = (vW - cropW) / 2;
+            const cropY = (vH - cropH) / 2;
+
+            canvas.width = cropW;
+            canvas.height = cropH;
+            const ctx = canvas.getContext('2d');
+
+            // 2. Capture
+            ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            
+            // 3. Nettoyage
+            preprocessImage(ctx, cropW, cropH);
+
+            try {
+                // 4. Lecture IA
+                const { data: { text, confidence } } = await Tesseract.recognize(canvas, 'eng', {
+                    tessedit_char_whitelist: '0123456789.,',
+                    tessedit_pageseg_mode: '7'
+                });
+
+                // Nettoyage du texte (uniquement chiffres et point)
+                const cleanText = text.replace(/[^0-9.,]/g, "").trim();
+
+                if (cleanText && confidence > 25) {
+                    resultDiv.innerText = cleanText + " kg";
+                    resultDiv.style.color = "var(--success)";
+                    statusDiv.innerText = "Lecture réussie (" + Math.round(confidence) + "%)";
+                } else {
+                    resultDiv.innerText = "Réessayer";
+                    statusDiv.innerText = "Impossible de lire nettement";
                 }
+            } catch (e) {
+                statusDiv.innerText = "Erreur OCR";
+            } finally {
+                scanBtn.disabled = false;
             }
-        });
+        }
+
+        scanBtn.addEventListener('click', performOCR);
+        window.addEventListener('load', initCamera);
     </script>
 </body>
 </html>
