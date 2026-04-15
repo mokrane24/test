@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner de Poids</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #f0f2f5; margin: 0; padding: 20px; }
+        #video-container { position: relative; width: 100%; max-width: 500px; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        video { width: 100%; display: block; }
+        .overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70%; height: 30%; border: 2px solid #00ff00; box-sizing: border-box; pointer-events: none; }
+        button { margin-top: 20px; padding: 15px 30px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 50px; cursor: pointer; transition: 0.3s; }
+        button:disabled { background: #ccc; }
+        #result { margin-top: 20px; font-size: 24px; font-weight: bold; color: #333; }
+        canvas { display: none; }
+        .loader { display: none; color: #007bff; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>Scanner de Balance</h2>
+    
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+        <div class="overlay"></div>
+    </div>
+
+    <button id="capture-btn">📷 Scanner le poids</button>
+    <div class="loader" id="loader">Analyse en cours...</div>
+    <div id="result">Poids : --</div>
+
+    <canvas id="snapshot"></canvas>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const btn = document.getElementById('capture-btn');
+        const resultDiv = document.getElementById('result');
+        const loader = document.getElementById('loader');
+        const canvas = document.getElementById('snapshot');
+
+        // 1. Démarrer la caméra arrière
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Erreur caméra: ", err);
+                alert("Impossible d'accéder à la caméra. Vérifiez les permissions ou le HTTPS.");
+            }
+        }
+
+        // 2. Capturer et traiter l'image pour l'OCR
+        async function scanWeight() {
+            const ctx = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // Dessiner l'image de la vidéo sur le canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Petit traitement d'image : Passage en Noir et Blanc (Grayscale) + Contraste
+            let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            let data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                let threshold = (avg > 128) ? 255 : 0; // Seuil simple pour isoler les chiffres
+                data[i] = data[i+1] = data[i+2] = threshold;
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            // 3. Lancer Tesseract.js
+            btn.disabled = true;
+            loader.style.display = 'block';
+            resultDiv.innerText = "Analyse...";
+
+            try {
+                const { data: { text } } = await Tesseract.recognize(canvas, 'eng', {
+                    // On limite l'OCR aux chiffres pour éviter les erreurs
+                    tessedit_char_whitelist: '0123456789.,'
+                });
+                
+                resultDiv.innerText = `Poids : ${text.trim() || "Non détecté"}`;
+            } catch (e) {
+                resultDiv.innerText = "Erreur de lecture";
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+            }
+        }
+
+        btn.addEventListener('click', scanWeight);
+        window.addEventListener('load', startCamera);
+    </script>
+</body>
+</html>
