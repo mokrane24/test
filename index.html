@@ -3,109 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Industriel v2</title>
+    <title>Scanner Balance Ultra</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        body { margin: 0; background: #000; color: white; font-family: sans-serif; overflow: hidden; }
-        #camera { width: 100vw; height: 60vh; object-fit: cover; }
-        .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 60vh;
-            display: flex; align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.2);
+        body { margin: 0; background: #000; color: #fff; font-family: monospace; overflow: hidden; text-align: center; }
+        video { width: 100%; height: 50vh; object-fit: cover; border-bottom: 2px solid #333; }
+        .visor {
+            position: absolute; top: 15vh; left: 10%; width: 80%; height: 20vh;
+            border: 2px solid #0f0; box-shadow: 0 0 15px #0f0; pointer-events: none;
         }
-        .box { width: 80%; height: 30%; border: 3px solid #00ff00; border-radius: 8px; box-shadow: 0 0 20px rgba(0,255,0,0.5); }
-        
-        .results-area { height: 40vh; background: #111; padding: 20px; box-sizing: border-box; text-align: center; }
-        #weight { font-size: 5rem; font-weight: bold; color: #00ff00; margin: 0; }
-        #status { color: #888; font-size: 0.9rem; margin-bottom: 10px; }
-        .preview-mini { width: 160px; height: 60px; border: 1px solid #444; margin-top: 10px; }
+        .controls { padding: 20px; }
+        #weight { font-size: 5rem; color: #0f0; margin: 10px 0; font-weight: bold; }
+        canvas { width: 90%; height: auto; border: 1px solid #444; margin-top: 10px; image-rendering: pixelated; }
+        #status { color: #888; font-size: 12px; }
     </style>
 </head>
 <body>
 
-    <video id="camera" autoplay playsinline></video>
-    <div class="overlay"><div class="box"></div></div>
+    <video id="v" autoplay playsinline></video>
+    <div class="visor"></div>
 
-    <div class="results-area">
-        <div id="status">RECHERCHE DE CHIFFRES...</div>
-        <p id="weight">----</p>
-        <canvas id="debug" class="preview-mini"></canvas>
-        <p style="font-size: 11px; color: #555;">Stabilisation automatique activée</p>
+    <div class="controls">
+        <div id="status">RECHERCHE DE SIGNAL...</div>
+        <div id="weight">----</div>
+        <canvas id="debug"></canvas>
+        <p>Ajustez la distance pour que les chiffres remplissent le cadre</p>
     </div>
 
     <script>
-        const video = document.getElementById('camera');
-        const debug = document.getElementById('debug');
-        const weightDisplay = document.getElementById('weight');
-        const statusDisplay = document.getElementById('status');
-        
-        let isProcessing = false;
-        let history = []; // Pour stocker les dernières lectures
+        const v = document.getElementById('v');
+        const canvas = document.getElementById('debug');
+        const weightDisp = document.getElementById('weight');
+        const statusDisp = document.getElementById('status');
+        const ctx = canvas.getContext('2d', {alpha: false});
 
-        // 1. Démarrage caméra
-        navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment', width: 1280 } 
-        }).then(stream => video.srcObject = stream);
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(s => v.srcObject = s);
 
-        // 2. Fonction de traitement d'image ultra-rapide
-        function processFrame() {
-            if (isProcessing) return;
-            isProcessing = true;
+        async function process() {
+            if (v.videoWidth === 0) return requestAnimationFrame(process);
 
-            const ctx = debug.getContext('2d', { alpha: false });
-            const w = 200; // On travaille sur une petite image pour la vitesse
-            const h = 80;
-            debug.width = w; debug.height = h;
+            // 1. Capture & Nettoyage Extrême
+            const w = 300; const h = 100;
+            canvas.width = w; canvas.height = h;
+            
+            // On zoom sur le centre
+            ctx.drawImage(v, v.videoWidth*0.15, v.videoHeight*0.4, v.videoWidth*0.7, v.videoHeight*0.2, 0, 0, w, h);
+            
+            let imgData = ctx.getImageData(0, 0, w, h);
+            let d = imgData.data;
 
-            // On capture uniquement la zone centrale
-            ctx.drawImage(video, video.videoWidth * 0.1, video.videoHeight * 0.35, video.videoWidth * 0.8, video.videoHeight * 0.3, 0, 0, w, h);
+            // Seuil adaptatif simplifié (Otsu)
+            let total = 0;
+            for(let i=0; i<d.length; i+=4) total += (d[i]+d[i+1]+d[i+2])/3;
+            let avg = total / (d.length/4);
 
-            // Filtre de seuil automatique (Otsu-like simple)
-            const imgData = ctx.getImageData(0, 0, w, h);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-                let brightness = (d[i] + d[i+1] + d[i+2]) / 3;
-                let v = (brightness > 110) ? 255 : 0; // On garde les segments blancs
-                d[i] = d[i+1] = d[i+2] = (v === 255) ? 0 : 255; // Inversion pour Tesseract
+            for(let i=0; i<d.length; i+=4) {
+                let b = (d[i]+d[i+1]+d[i+2])/3;
+                let val = (b > avg + 20) ? 255 : 0; // On isole les segments brillants
+                // Inversion pour l'OCR : Fond blanc, Segments NOIRS
+                d[i] = d[i+1] = d[i+2] = (val === 255) ? 0 : 255;
             }
             ctx.putImageData(imgData, 0, 0);
 
-            // 3. OCR en arrière-plan
-            Tesseract.recognize(debug, 'eng', {
-                tessedit_char_whitelist: '0123456789',
-                tessedit_pageseg_mode: '7',
-            }).then(({ data: { text } }) => {
-                let res = text.replace(/[^0-9]/g, "");
-                if (res.length >= 2) {
-                    updateHistory(res);
+            // 2. Tentative OCR avec Tesseract optimisé "Caractère par Caractère"
+            try {
+                const result = await Tesseract.recognize(canvas, 'eng', {
+                    tessedit_char_whitelist: '0123456789.,',
+                    tessedit_pageseg_mode: '7', // Traite l'image comme une seule ligne de texte
+                    tessedit_ocr_engine_mode: '1' // Mode LSTM uniquement
+                });
+
+                let txt = result.data.text.replace(/[^0-9]/g, "");
+                
+                if (txt.length > 0) {
+                    weightDisp.innerText = txt;
+                    statusDisp.innerText = "LECTURE EN COURS";
+                    statusDisp.style.color = "#0f0";
+                } else {
+                    statusDisp.innerText = "SANS CHIFFRE - RAPPROCHEZ-VOUS";
+                    statusDisp.style.color = "#f00";
                 }
-                isProcessing = false;
-            }).catch(() => isProcessing = false);
+            } catch(e) { console.error(e); }
+
+            setTimeout(process, 300); // Boucle toutes les 300ms
         }
 
-        // 4. Logique de stabilisation (Le Vote)
-        function updateHistory(val) {
-            history.push(val);
-            if (history.length > 5) history.shift();
-
-            // On cherche si une valeur revient souvent
-            const counts = {};
-            history.forEach(v => counts[v] = (counts[v] || 0) + 1);
-            const sorted = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
-
-            if (counts[sorted[0]] >= 2) { // Si la valeur est apparue au moins 2 fois sur les 5 dernières
-                weightDisplay.innerText = sorted[0];
-                weightDisplay.style.color = "#00ff00";
-                statusDisplay.innerText = "LECTURE STABLE";
-            } else {
-                statusDisplay.innerText = "STABILISATION...";
-                weightDisplay.style.color = "#555";
-            }
-        }
-
-        // Lancer la boucle de scan automatique
-        setInterval(processFrame, 500); // Scanne toutes les demi-secondes
-
+        v.onplay = () => process();
     </script>
 </body>
 </html>
