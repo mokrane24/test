@@ -3,114 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Ultra-Précis</title>
+    <title>Scanner Industriel v2</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        :root { --neon: #00ff00; }
-        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
-        
-        #cam-container { position: relative; flex: 1; overflow: hidden; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Cadre de visée */
-        .target {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 80%; height: 20%; border: 2px solid var(--neon);
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.6); z-index: 5;
+        body { margin: 0; background: #000; color: white; font-family: sans-serif; overflow: hidden; }
+        #camera { width: 100vw; height: 60vh; object-fit: cover; }
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 60vh;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.2);
         }
-
-        /* Panneau de contrôle */
-        .controls { background: #1a1a1a; padding: 20px; border-top: 2px solid #333; }
-        #result { font-size: 4rem; color: var(--neon); text-align: center; font-family: monospace; margin-bottom: 10px; }
+        .box { width: 80%; height: 30%; border: 3px solid #00ff00; border-radius: 8px; box-shadow: 0 0 20px rgba(0,255,0,0.5); }
         
-        .slider-box { margin-bottom: 20px; text-align: center; }
-        input[type=range] { width: 100%; height: 30px; }
-
-        button {
-            width: 100%; padding: 20px; background: var(--neon); color: #000;
-            border: none; border-radius: 10px; font-weight: bold; font-size: 1.2rem;
-        }
-        
-        #debug-canvas { width: 100%; height: auto; border: 1px solid #555; margin-top: 10px; display: block; }
+        .results-area { height: 40vh; background: #111; padding: 20px; box-sizing: border-box; text-align: center; }
+        #weight { font-size: 5rem; font-weight: bold; color: #00ff00; margin: 0; }
+        #status { color: #888; font-size: 0.9rem; margin-bottom: 10px; }
+        .preview-mini { width: 160px; height: 60px; border: 1px solid #444; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div id="cam-container">
-        <video id="video" autoplay playsinline></video>
-        <div class="target"></div>
-    </div>
+    <video id="camera" autoplay playsinline></video>
+    <div class="overlay"><div class="box"></div></div>
 
-    <div class="controls">
-        <div id="result">----</div>
-        
-        <div class="slider-box">
-            <label>Sensibilité (Ajuste pour voir les chiffres noirs) :</label>
-            <input type="range" id="threshold" min="50" max="200" value="130">
-        </div>
-
-        <button id="btn">LIRE LE POIDS</button>
-        
-        <p style="font-size: 10px; color: #888;">Aperçu du traitement (doit être bien net) :</p>
-        <canvas id="debug-canvas"></canvas>
+    <div class="results-area">
+        <div id="status">RECHERCHE DE CHIFFRES...</div>
+        <p id="weight">----</p>
+        <canvas id="debug" class="preview-mini"></canvas>
+        <p style="font-size: 11px; color: #555;">Stabilisation automatique activée</p>
     </div>
 
     <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('debug-canvas');
-        const threshInput = document.getElementById('threshold');
-        const resDiv = document.getElementById('result');
-        const btn = document.getElementById('btn');
+        const video = document.getElementById('camera');
+        const debug = document.getElementById('debug');
+        const weightDisplay = document.getElementById('weight');
+        const statusDisplay = document.getElementById('status');
+        
+        let isProcessing = false;
+        let history = []; // Pour stocker les dernières lectures
 
-        // Initialisation Caméra
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(s => video.srcObject = s);
+        // 1. Démarrage caméra
+        navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment', width: 1280 } 
+        }).then(stream => video.srcObject = stream);
 
-        // Boucle d'aperçu en temps réel pour régler le curseur
-        function updatePreview() {
-            const ctx = canvas.getContext('2d');
-            const w = video.videoWidth / 4;
-            const h = video.videoHeight / 4;
-            if (w > 0) {
-                canvas.width = w; canvas.height = h;
-                ctx.drawImage(video, 0, 0, w, h);
-                
-                const imgData = ctx.getImageData(0, 0, w, h);
-                const d = imgData.data;
-                const threshold = threshInput.value;
+        // 2. Fonction de traitement d'image ultra-rapide
+        function processFrame() {
+            if (isProcessing) return;
+            isProcessing = true;
 
-                for (let i = 0; i < d.length; i += 4) {
-                    let avg = (d[i] + d[i+1] + d[i+2]) / 3;
-                    let val = (avg > threshold) ? 255 : 0;
-                    d[i] = d[i+1] = d[i+2] = val; // Fond blanc, chiffres noirs
+            const ctx = debug.getContext('2d', { alpha: false });
+            const w = 200; // On travaille sur une petite image pour la vitesse
+            const h = 80;
+            debug.width = w; debug.height = h;
+
+            // On capture uniquement la zone centrale
+            ctx.drawImage(video, video.videoWidth * 0.1, video.videoHeight * 0.35, video.videoWidth * 0.8, video.videoHeight * 0.3, 0, 0, w, h);
+
+            // Filtre de seuil automatique (Otsu-like simple)
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+                let brightness = (d[i] + d[i+1] + d[i+2]) / 3;
+                let v = (brightness > 110) ? 255 : 0; // On garde les segments blancs
+                d[i] = d[i+1] = d[i+2] = (v === 255) ? 0 : 255; // Inversion pour Tesseract
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            // 3. OCR en arrière-plan
+            Tesseract.recognize(debug, 'eng', {
+                tessedit_char_whitelist: '0123456789',
+                tessedit_pageseg_mode: '7',
+            }).then(({ data: { text } }) => {
+                let res = text.replace(/[^0-9]/g, "");
+                if (res.length >= 2) {
+                    updateHistory(res);
                 }
-                ctx.putImageData(imgData, 0, 0);
-            }
-            requestAnimationFrame(updatePreview);
-        }
-        video.onplay = updatePreview;
-
-        // Fonction Scan
-        async function scan() {
-            btn.disabled = true;
-            resDiv.innerText = "...";
-
-            // Utilise le canvas de debug (déjà traité) pour l'OCR
-            try {
-                const { data: { text } } = await Tesseract.recognize(canvas, 'eng', {
-                    tessedit_char_whitelist: '0123456789',
-                    tessedit_pageseg_mode: '7'
-                });
-                
-                const clean = text.replace(/[^0-9]/g, "");
-                resDiv.innerText = clean || "REFAIRE";
-            } catch (e) {
-                resDiv.innerText = "ERR";
-            }
-            btn.disabled = false;
+                isProcessing = false;
+            }).catch(() => isProcessing = false);
         }
 
-        btn.onclick = scan;
+        // 4. Logique de stabilisation (Le Vote)
+        function updateHistory(val) {
+            history.push(val);
+            if (history.length > 5) history.shift();
+
+            // On cherche si une valeur revient souvent
+            const counts = {};
+            history.forEach(v => counts[v] = (counts[v] || 0) + 1);
+            const sorted = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
+
+            if (counts[sorted[0]] >= 2) { // Si la valeur est apparue au moins 2 fois sur les 5 dernières
+                weightDisplay.innerText = sorted[0];
+                weightDisplay.style.color = "#00ff00";
+                statusDisplay.innerText = "LECTURE STABLE";
+            } else {
+                statusDisplay.innerText = "STABILISATION...";
+                weightDisplay.style.color = "#555";
+            }
+        }
+
+        // Lancer la boucle de scan automatique
+        setInterval(processFrame, 500); // Scanne toutes les demi-secondes
+
     </script>
 </body>
 </html>
