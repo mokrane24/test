@@ -2,546 +2,469 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>UltraScan Industrial Weight Reader</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scanner Balance - 7Seg OCR Pro</title>
     <style>
         * {
             box-sizing: border-box;
             user-select: none;
         }
-
         body {
             margin: 0;
-            background: #000000;
-            color: #00ffcc;
-            font-family: 'Courier New', 'Fira Code', monospace;
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
             overflow: hidden;
-            touch-action: pan-x pan-y; /* permet le zoom mais pas de défilement vertical complet */
         }
-
-        .camera-container {
+        .camera-wrap {
             position: relative;
-            width: 100vw;
+            width: 100%;
             height: 55vh;
-            background: #0a0a0a;
+            background: #000;
             overflow: hidden;
-            border-bottom: 3px solid #00ffcc;
-            box-shadow: 0 0 20px rgba(0,255,204,0.3);
         }
-
         video {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transform: scale(1.02);
         }
-
-        /* viseur ultra précis industriel */
         .visor {
             position: absolute;
             top: 25%;
             left: 10%;
             width: 80%;
-            height: 28%;
-            border: 3px solid #00ffcc;
-            background: rgba(0, 255, 204, 0.08);
-            box-shadow: 0 0 0 2px rgba(0,0,0,0.6), inset 0 0 15px rgba(0,255,204,0.3);
+            height: 22%;
+            border: 3px solid #0f0;
+            box-shadow: 0 0 20px #0f0, inset 0 0 10px rgba(0,255,0,0.3);
             pointer-events: none;
-            border-radius: 8px;
-            transition: all 0.1s;
-            z-index: 20;
+            border-radius: 12px;
+            background: rgba(0,255,0,0.05);
+            z-index: 10;
         }
-
-        .visor::before {
-            content: "TARGET ZONE";
+        .visor::after {
+            content: "ZONE DE LECTURE";
             position: absolute;
-            bottom: -28px;
+            bottom: -26px;
             right: 0;
-            background: #00ffcc;
+            background: #0f0;
             color: #000;
             font-size: 10px;
             font-weight: bold;
-            padding: 2px 8px;
+            padding: 2px 10px;
             font-family: monospace;
-            letter-spacing: 1px;
         }
-
         .controls {
-            padding: 16px 20px 20px;
-            background: linear-gradient(145deg, #0c0f0e 0%, #000000 100%);
-            border-radius: 28px 28px 0 0;
-            margin-top: -12px;
-            position: relative;
-            z-index: 10;
+            padding: 15px 20px;
+            background: #0a0a0a;
         }
-
-        .weight-panel {
-            background: #030303;
-            border: 2px solid #2affb6;
-            border-radius: 28px;
-            padding: 12px 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 0 #005c4a;
-        }
-
-        #weight {
-            font-size: 5.2rem;
-            font-weight: 800;
-            font-family: 'Monaco', 'Courier New', monospace;
-            letter-spacing: 6px;
+        .weight-box {
+            background: #000;
+            border: 2px solid #0f0;
+            border-radius: 20px;
+            padding: 10px 20px;
+            margin-bottom: 15px;
             text-align: center;
-            color: #3eff9e;
-            background: #000000;
-            text-shadow: 0 0 6px #00ffaa;
-            word-break: break-word;
-            line-height: 1.2;
         }
-
-        .unit {
-            font-size: 1.3rem;
-            color: #8effdd;
-            margin-left: 8px;
-            letter-spacing: 1px;
-        }
-
-        #status {
-            font-size: 0.75rem;
-            text-transform: uppercase;
+        #weight {
+            font-size: 4.5rem;
             font-weight: bold;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 8px;
+            color: #0f0;
+            text-shadow: 0 0 5px #0f0;
+            word-break: break-word;
+        }
+        .unit {
+            font-size: 1rem;
+            color: #0a0;
+        }
+        #status {
+            font-size: 11px;
             background: #111;
             display: inline-block;
-            padding: 6px 16px;
-            border-radius: 60px;
-            letter-spacing: 1px;
-            margin-bottom: 16px;
-            border-left: 4px solid #00ffcc;
+            padding: 5px 15px;
+            border-radius: 30px;
+            margin-bottom: 12px;
+            border-left: 3px solid #0f0;
         }
-
-        .debug-container {
-            background: #0b0e0c;
-            border-radius: 18px;
-            padding: 8px;
-            border: 1px solid #2b4b40;
-            margin-top: 12px;
-        }
-
         canvas {
             width: 100%;
             background: #000;
-            border-radius: 12px;
-            display: block;
+            border: 1px solid #333;
+            border-radius: 8px;
             image-rendering: crisp-edges;
-            image-rendering: pixelated;
-            border: 1px solid #2effb0;
         }
-
-        .info-text {
+        .info {
             font-size: 10px;
-            color: #7faa9a;
-            margin-top: 14px;
+            color: #6f6;
             text-align: center;
-            background: rgba(0,0,0,0.6);
+            margin-top: 12px;
+            background: #0a0a0a;
             padding: 8px;
-            border-radius: 30px;
+            border-radius: 20px;
         }
-
         button {
-            background: #00a37a;
+            background: #0a0;
             border: none;
             font-family: monospace;
             font-weight: bold;
-            padding: 6px 14px;
-            border-radius: 40px;
-            color: black;
-            margin-top: 8px;
-            font-size: 12px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            margin-left: 10px;
+            cursor: pointer;
         }
-
-        .lock-badge {
-            position: absolute;
-            top: 12px;
-            right: 16px;
-            background: #000000aa;
-            backdrop-filter: blur(8px);
-            padding: 4px 10px;
-            border-radius: 50px;
-            font-size: 10px;
-            border: 1px solid cyan;
-            z-index: 25;
+        .flex {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
     </style>
 </head>
 <body>
 
-<div class="camera-container">
-    <video id="videoFeed" autoplay playsinline muted></video>
+<div class="camera-wrap">
+    <video id="video" autoplay playsinline muted></video>
     <div class="visor"></div>
-    <div class="lock-badge" id="lockIndicator">⚡ AUTOSCAN</div>
 </div>
 
 <div class="controls">
-    <div style="display: flex; justify-content: space-between; align-items: baseline;">
-        <div id="status">🔍 ANALYSE ZONE INDUSTRIELLE...</div>
-        <button id="forceCaptureBtn" style="background:#2c5a4a;">⟳ FORCER</button>
+    <div class="flex">
+        <div id="status">🔴 INITIALISATION CAMÉRA...</div>
+        <button id="forceBtn">⟳ FORCER LECTURE</button>
     </div>
-    <div class="weight-panel">
-        <div id="weight">--   --   --</div>
-        <div style="text-align:right; font-size:12px;">kg <span class="unit">(charge réelle)</span></div>
+    <div class="weight-box">
+        <div id="weight">----</div>
+        <div class="unit">KILOGRAMMES (kg)</div>
     </div>
-    <div class="debug-container">
-        <canvas id="debugCanvas" width="400" height="110" style="width:100%; height:auto; background:#000;"></canvas>
-        <div class="info-text">
-            🚛 CADRAGE PRÉCIS : ALIGNER LES CHIFFRES DANS LE RECTANGLE VERT | RECONNAISSANCE HAUTE FIABILITÉ
-        </div>
+    <canvas id="debugCanvas" width="400" height="100" style="width:100%; height:auto;"></canvas>
+    <div class="info">
+        🚛 CADREZ LES CHIFFRES DANS LE RECTANGLE VERT | LECTURE 7 SEGMENTS INTÉGRÉE
     </div>
 </div>
 
 <script>
-    (function(){
-        // ---------- ÉLÉMENTS DOM ----------
-        const video = document.getElementById('videoFeed');
+    (function() {
+        // ========== ÉLÉMENTS ==========
+        const video = document.getElementById('video');
         const debugCanvas = document.getElementById('debugCanvas');
         const ctx = debugCanvas.getContext('2d');
-        const weightElement = document.getElementById('weight');
-        const statusElement = document.getElementById('status');
-        const forceBtn = document.getElementById('forceCaptureBtn');
+        const weightDisplay = document.getElementById('weight');
+        const statusSpan = document.getElementById('status');
+        const forceBtn = document.getElementById('forceBtn');
 
-        // ---------- CONFIG OPTIMISÉE INDUSTRIELLE ----------
-        let activeProcess = true;
-        let lastStableWeight = null;
-        let weightHistory = [];     // historique pour stabilité
-        const HISTORY_SIZE = 4;
-        let lastGoodRaw = "";
-        let consecutiveFail = 0;
-
-        // Paramètres de zone de capture (ROI) - adapté pour balances industrielles semi-remorque
-        // ROI proportionnelle à la vidéo (pour affichage robuste)
-        let roi = { x: 0.15, y: 0.38, width: 0.70, height: 0.22 }; 
-        // zone viseur légèrement plus grande que la capture finale pour robustesse
-        // mais l'OCR se fait sur la zone extraite et prétraitée
-
-        // Lancement caméra arrière haute résolution
-        async function initCamera() {
-            try {
-                const constraints = {
-                    video: {
-                        facingMode: { exact: "environment" },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
+        // ========== CONFIGURATION ==========
+        let isScanning = true;
+        let lastStableValue = null;
+        let valueBuffer = [];      // stabilisation
+        const BUFFER_SIZE = 3;
+        
+        // Zone de capture (ROI) - centrée sur l'affichage de la balance
+        let roi = { x: 0.12, y: 0.38, width: 0.76, height: 0.22 };
+        
+        // ========== DÉTECTION DE CHIFFRES 7 SEGMENTS (OCR MAISON) ==========
+        // Matrice des segments pour chaque chiffre (0-9)
+        // Les segments sont codés: a,b,c,d,e,f,g (haut, haut-droit, bas-droit, bas, bas-gauche, haut-gauche, milieu)
+        const SEGMENT_PATTERNS = {
+            '0': [1,1,1,1,1,1,0],
+            '1': [0,1,1,0,0,0,0],
+            '2': [1,1,0,1,1,0,1],
+            '3': [1,1,1,1,0,0,1],
+            '4': [0,1,1,0,0,1,1],
+            '5': [1,0,1,1,0,1,1],
+            '6': [1,0,1,1,1,1,1],
+            '7': [1,1,1,0,0,0,0],
+            '8': [1,1,1,1,1,1,1],
+            '9': [1,1,1,1,0,1,1]
+        };
+        
+        // Analyse une zone pour y détecter les segments allumés
+        function detectSegmentsInZone(imageData, startX, startY, zoneWidth, zoneHeight, digitIndex) {
+            // Découpage en 7 zones correspondant aux segments a,b,c,d,e,f,g
+            const segZones = [
+                { name: 'a', x: 0.35, y: 0.05, w: 0.30, h: 0.12 },  // segment haut
+                { name: 'b', x: 0.75, y: 0.25, w: 0.12, h: 0.25 },  // haut-droit
+                { name: 'c', x: 0.75, y: 0.60, w: 0.12, h: 0.25 },  // bas-droit
+                { name: 'd', x: 0.35, y: 0.83, w: 0.30, h: 0.12 },  // segment bas
+                { name: 'e', x: 0.13, y: 0.60, w: 0.12, h: 0.25 },  // bas-gauche
+                { name: 'f', x: 0.13, y: 0.25, w: 0.12, h: 0.25 },  // haut-gauche
+                { name: 'g', x: 0.35, y: 0.44, w: 0.30, h: 0.12 }    // milieu
+            ];
+            
+            const data = imageData.data;
+            const imgW = imageData.width;
+            const imgH = imageData.height;
+            
+            let segmentsLit = [];
+            
+            for (let s = 0; s < segZones.length; s++) {
+                const zone = segZones[s];
+                const pxStartX = startX + Math.floor(zone.x * zoneWidth);
+                const pxStartY = startY + Math.floor(zone.y * zoneHeight);
+                const pxW = Math.max(1, Math.floor(zone.w * zoneWidth));
+                const pxH = Math.max(1, Math.floor(zone.h * zoneHeight));
+                
+                let totalBrightness = 0;
+                let pixelCount = 0;
+                
+                for (let y = 0; y < pxH && (pxStartY + y) < imgH; y++) {
+                    for (let x = 0; x < pxW && (pxStartX + x) < imgW; x++) {
+                        const idx = ((pxStartY + y) * imgW + (pxStartX + x)) * 4;
+                        if (idx + 2 < data.length) {
+                            const brightness = (data[idx] + data[idx+1] + data[idx+2]) / 3;
+                            totalBrightness += brightness;
+                            pixelCount++;
+                        }
                     }
-                };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                await new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        video.play();
-                        resolve();
-                    };
-                });
-                statusElement.innerHTML = "📡 CAMÉRA ACTIVE | PLACEZ LA BALANCE DANS LE CADRE";
-                statusElement.style.color = "#aaffdd";
-            } catch (err) {
-                console.warn("caméra arrière impossible, fallback avant", err);
-                try {
-                    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                    video.srcObject = fallbackStream;
-                    await video.play();
-                    statusElement.innerHTML = "⚠️ MODE SECONDAIRE | CADREZ LES CHIFFRES";
-                } catch (e) {
-                    statusElement.innerHTML = "❌ ERREUR CAMÉRA - ACCÈS REFUSÉ";
-                    statusElement.style.color = "red";
                 }
-            }
-        }
-
-        // Prétraitement agressif pour écrans LCD/LED balances industrielles
-        function preprocessForWeight(imgData, width, height) {
-            const data = imgData.data;
-            // 1. Conversion luminance et contraste extrême
-            let histogram = new Array(256).fill(0);
-            for (let i = 0; i < data.length; i += 4) {
-                const lum = Math.round(0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
-                histogram[lum]++;
-            }
-            // Trouver seuil Otsu rapide
-            let totalPixels = (data.length / 4);
-            let sum = 0;
-            for (let i = 0; i < 256; i++) sum += i * histogram[i];
-            let sumB = 0, wB = 0, wF = 0;
-            let varMax = 0, threshold = 80;
-            for (let t = 0; t < 256; t++) {
-                wB += histogram[t];
-                if (wB === 0) continue;
-                wF = totalPixels - wB;
-                if (wF === 0) break;
-                sumB += t * histogram[t];
-                let mB = sumB / wB;
-                let mF = (sum - sumB) / wF;
-                let varBetween = wB * wF * (mB - mF) * (mB - mF);
-                if (varBetween > varMax) {
-                    varMax = varBetween;
-                    threshold = t;
-                }
-            }
-            // Seuil adapté + biais pour écrans brillants (balances à fond clair / fond noir)
-            let finalThreshold = Math.min(220, threshold + 15);
-            // Inverser intelligemment : la plupart des poids s'affichent en segments lumineux sur fond sombre (LED)
-            // mais parfois LCD fond clair. On va détecter majorité pixels clairs ou sombres.
-            let brightCount = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                let lum = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
-                if (lum > finalThreshold) brightCount++;
-            }
-            let isDarkBg = (brightCount < totalPixels * 0.5); // fond global sombre -> chiffres clairs
-            for (let i = 0; i < data.length; i += 4) {
-                let lum = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
-                let binary = (lum > finalThreshold) ? 255 : 0;
-                // Si fond sombre (LED typique) on veut caractères blancs sur fond noir pour Tesseract,
-                // mais Tesseract aime mieux texte noir sur blanc. On ajuste selon contexte.
-                // Pour fiabilité max, on force l'image en texte NOIR sur BLANC (inversion conditionnelle)
-                let finalValue;
-                if (isDarkBg) {
-                    // fond sombre, chiffres lumineux => inversion pour obtenir fond blanc / chiffres noirs
-                    finalValue = (binary === 255) ? 0 : 255;
+                
+                if (pixelCount > 0) {
+                    let avgBright = totalBrightness / pixelCount;
+                    // Seuil : si la zone est suffisamment claire, le segment est allumé
+                    let isLit = avgBright > 180;
+                    segmentsLit.push(isLit ? 1 : 0);
                 } else {
-                    // fond clair, chiffres sombres => garder tel quel
-                    finalValue = binary;
+                    segmentsLit.push(0);
                 }
-                // post nettoyage bords : renforcer contraste extrême
-                data[i] = finalValue;     // R
-                data[i+1] = finalValue;   // G
-                data[i+2] = finalValue;   // B
             }
+            
+            return segmentsLit;
+        }
+        
+        // Compare les segments détectés avec les motifs connus
+        function matchDigit(segments) {
+            let bestMatch = '?';
+            let bestScore = 0;
+            
+            for (let digit = 0; digit <= 9; digit++) {
+                const pattern = SEGMENT_PATTERNS[digit.toString()];
+                let score = 0;
+                for (let i = 0; i < 7; i++) {
+                    if (segments[i] === pattern[i]) score++;
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = digit.toString();
+                }
+            }
+            
+            // Seuil de confiance : au moins 5/7 segments corrects
+            return bestScore >= 5 ? bestMatch : null;
+        }
+        
+        // Trouve tous les chiffres dans la ligne d'affichage
+        function extractDigitsFromROI(imageData, roiX, roiY, roiW, roiH) {
+            // Estimation du nombre de chiffres (généralement 4 à 6 pour une balance)
+            const expectedDigits = 5;
+            const digitWidth = roiW / expectedDigits;
+            const digitHeight = roiH;
+            const digits = [];
+            
+            for (let d = 0; d < expectedDigits; d++) {
+                const digitStartX = roiX + (d * digitWidth);
+                const digitZoneW = digitWidth;
+                
+                const segments = detectSegmentsInZone(imageData, digitStartX, roiY, digitZoneW, digitHeight, d);
+                const digitChar = matchDigit(segments);
+                
+                if (digitChar && digitChar !== '?') {
+                    digits.push(digitChar);
+                } else if (digits.length > 0) {
+                    // Si on a déjà des chiffres, on s'arrête (fin de l'affichage)
+                    break;
+                }
+            }
+            
+            return digits.join('');
+        }
+        
+        // ========== PRÉTRAITEMENT IMAGE POUR 7 SEGMENTS ==========
+        function preprocessForSevenSegment(imgData, width, height) {
+            const data = imgData.data;
+            
+            // Calcul du seuillage adaptatif pour isoler les segments lumineux
+            let sum = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const lum = (data[i] + data[i+1] + data[i+2]) / 3;
+                sum += lum;
+            }
+            const avgLum = sum / (data.length / 4);
+            const threshold = avgLum + 40; // Seuil haut pour capturer les segments brillants
+            
+            // Binarisation : les segments allumés deviennent blancs (255), fond noir (0)
+            for (let i = 0; i < data.length; i += 4) {
+                const lum = (data[i] + data[i+1] + data[i+2]) / 3;
+                const binary = (lum > threshold) ? 255 : 0;
+                data[i] = binary;     // R
+                data[i+1] = binary;   // G
+                data[i+2] = binary;   // B
+            }
+            
             return imgData;
         }
-
-        // Extraction ROI et scaling pour OCR
-        function extractROI(videoEl, targetW, targetH) {
-            if (videoEl.videoWidth === 0 || videoEl.videoHeight === 0) return null;
-            const vw = videoEl.videoWidth;
-            const vh = videoEl.videoHeight;
+        
+        // ========== CAPTURE ET ANALYSE ==========
+        function captureAndAnalyze() {
+            if (!isScanning) return;
+            if (!video.videoWidth || video.videoHeight === 0) {
+                requestAnimationFrame(() => setTimeout(captureAndAnalyze, 200));
+                return;
+            }
+            
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            
+            // Calcul des coordonnées ROI
             const roiX = Math.floor(vw * roi.x);
             const roiY = Math.floor(vh * roi.y);
             const roiW = Math.floor(vw * roi.width);
             const roiH = Math.floor(vh * roi.height);
-            if (roiW < 40 || roiH < 30) return null;
+            
+            if (roiW < 50 || roiH < 30) {
+                requestAnimationFrame(() => setTimeout(captureAndAnalyze, 200));
+                return;
+            }
+            
+            // Capture de la zone sur un canvas temporaire
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = targetW;
-            tempCanvas.height = targetH;
+            tempCanvas.width = roiW;
+            tempCanvas.height = roiH;
             const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(videoEl, roiX, roiY, roiW, roiH, 0, 0, targetW, targetH);
-            return tempCanvas;
-        }
-
-        // Nettoyage OCR final : décodage poids semi-remorque / multiple digits
-        function cleanWeightNumber(rawText) {
-            // Garde chiffres, points, virgules (pour décimales)
-            let filtered = rawText.replace(/[^0-9,.]/g, '');
-            // Transformer virgule en point si besoin
-            filtered = filtered.replace(/,/g, '.');
-            // Trouver le premier nombre significatif (souvent 4 à 6 chiffres)
-            let numberMatch = filtered.match(/\d+(?:\.\d+)?/);
-            if (!numberMatch) return null;
-            let weightStr = numberMatch[0];
-            // Validation industriel: un poids réaliste souvent entre 2000 et 45000 kg pour semi-remorque
-            let weightVal = parseFloat(weightStr);
-            if (isNaN(weightVal)) return null;
-            // Tolérance étendue : un petit affichage de balance peut être 0 - 80 tonnes
-            if (weightVal > 0 && weightVal < 150000) {
-                // si poids trop petit < 20kg c'est souvent une erreur
-                if (weightVal > 0.9 || weightStr.length >= 3) return weightStr;
-                else if (weightStr.length === 2 && weightVal > 10) return weightStr;
-            }
-            // si c'est un nombre comme 5.0 ou 12.3 mais cohérent
-            if (weightVal >= 0 && weightStr.length >= 2) return weightStr;
-            return null;
-        }
-
-        // Mise à jour avec filtrage stabilité industrielle
-        function updateWeightDisplay(newWeightStr) {
-            if (!newWeightStr) return false;
-            let numVal = parseFloat(newWeightStr);
-            if (isNaN(numVal)) return false;
-            // Mémoriser historique de valeurs brutes
-            weightHistory.push(newWeightStr);
-            if (weightHistory.length > HISTORY_SIZE) weightHistory.shift();
-            // Vérifier si les 3 dernières valeurs identiques (stabilité)
-            let allSame = weightHistory.length >= 2 && weightHistory.every(v => v === weightHistory[0]);
-            if (allSame || weightHistory.length >= 3) {
-                // détection d'oscillation : si changement brutal > 15% ignorer
-                if (lastStableWeight !== null) {
-                    let lastVal = parseFloat(lastStableWeight);
-                    let diffPercent = Math.abs(numVal - lastVal) / lastVal;
-                    if (diffPercent > 0.25 && lastVal > 1000 && weightHistory.length > 2) {
-                        // possible transition, mais on attend confirmation
-                        statusElement.innerHTML = "🔄 STABILISATION EN COURS...";
-                        return false;
-                    }
-                }
-                if (lastStableWeight !== newWeightStr) {
-                    lastStableWeight = newWeightStr;
-                    weightElement.innerHTML = newWeightStr.padEnd(8, ' ').slice(0, 8);
-                    statusElement.innerHTML = "✅ POIDS VERROUILLÉ | INDUSTRIEL";
-                    statusElement.style.color = "#b5ffcb";
-                    return true;
-                }
-            }
-            // Affichage temporaire sans verrouillage définitif pour feedback visuel
-            weightElement.innerHTML = newWeightStr + " ?";
-            return false;
-        }
-
-        // Fonction OCR avec fallback: utilisation de Tesseract optimisé whitelist
-        async function performOCR(canvasElement) {
-            if (!canvasElement) return null;
-            try {
-                const { data: { text } } = await Tesseract.recognize(
-                    canvasElement,
-                    'eng',
-                    {
-                        tessedit_char_whitelist: '0123456789.,',
-                        tessedit_pageseg_mode: '7',      // single text line
-                        tessedit_ocr_engine_mode: '1',   // LSTM only
-                        user_patterns: '\\d{1,3}[.,]?\\d{0,3}'
-                    }
-                );
-                let cleaned = cleanWeightNumber(text);
-                if (cleaned) return cleaned;
-                // second essai avec regex plus aggressive si besoin
-                let digitsOnly = text.replace(/\D/g, '');
-                if (digitsOnly.length >= 3 && digitsOnly.length <= 7) {
-                    let possibleWeight = digitsOnly.replace(/^0+/, '');
-                    if (possibleWeight.length > 0 && !isNaN(parseFloat(possibleWeight))) return possibleWeight;
-                }
-                return null;
-            } catch(e) {
-                console.warn("OCR error", e);
-                return null;
-            }
-        }
-
-        // traitement complet pipeline: capture, prétraitement, OCR, affichage
-        async function captureAndRead() {
-            if (!activeProcess) return;
-            if (!video.videoWidth || video.readyState < 2) {
-                requestAnimationFrame(() => setTimeout(captureAndRead, 200));
-                return;
-            }
-            // Extraire ROI dans canvas temporaire
-            const roiCanvas = extractROI(video, 420, 120);   // résolution optimale OCR
-            if (!roiCanvas) {
-                statusElement.innerHTML = "⚠️ AJUSTEZ LE CADRAGE / LUMIÈRE";
-                requestAnimationFrame(() => setTimeout(captureAndRead, 280));
-                return;
-            }
-            // Prétraitement sur le canvas du debug pour visuel utilisateur
-            const roiCtx = roiCanvas.getContext('2d');
-            let imgData = roiCtx.getImageData(0, 0, roiCanvas.width, roiCanvas.height);
-            imgData = preprocessForWeight(imgData, roiCanvas.width, roiCanvas.height);
-            roiCtx.putImageData(imgData, 0, 0);
-            // Copier vers debugCanvas pour feedback
+            tempCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, roiW, roiH);
+            
+            // Prétraitement
+            let imgData = tempCtx.getImageData(0, 0, roiW, roiH);
+            imgData = preprocessForSevenSegment(imgData, roiW, roiH);
+            tempCtx.putImageData(imgData, 0, 0);
+            
+            // Affichage debug
             ctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
-            ctx.drawImage(roiCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
-            // Lancer OCR
-            try {
-                const weightValue = await performOCR(roiCanvas);
-                if (weightValue) {
-                    consecutiveFail = 0;
-                    updateWeightDisplay(weightValue);
-                    lastGoodRaw = weightValue;
-                    statusElement.innerHTML = "📊 LECTURE AUTOMATIQUE OK";
-                } else {
-                    consecutiveFail++;
-                    if (consecutiveFail > 4) {
-                        statusElement.innerHTML = "❌ AUCUN CHIFFRE - VÉRIFIEZ ÉCLAIRAGE/CADRAGE";
-                        statusElement.style.color = "#ffaa77";
+            ctx.drawImage(tempCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
+            
+            // Extraction des chiffres
+            const detectedNumber = extractDigitsFromROI(imgData, 0, 0, roiW, roiH);
+            
+            if (detectedNumber && detectedNumber.length >= 3) {
+                // Nettoyage : enlever les zéros non significatifs
+                let cleanNumber = detectedNumber.replace(/^0+/, '');
+                if (cleanNumber === '') cleanNumber = '0';
+                
+                // Stabilisation (historique)
+                valueBuffer.push(cleanNumber);
+                if (valueBuffer.length > BUFFER_SIZE) valueBuffer.shift();
+                
+                // Vérifier si la valeur est stable (identique sur les 3 dernières lectures)
+                const isStable = valueBuffer.length === BUFFER_SIZE && 
+                                 valueBuffer.every(v => v === valueBuffer[0]);
+                
+                if (isStable) {
+                    if (lastStableValue !== cleanNumber) {
+                        lastStableValue = cleanNumber;
+                        weightDisplay.innerText = cleanNumber;
+                        statusSpan.innerHTML = "✅ POIDS VERROUILLÉ | STABLE";
+                        statusSpan.style.color = "#0f0";
                     } else {
-                        statusElement.innerHTML = "🔎 SCAN EN COURS... PLACEZ LA BALANCE";
+                        statusSpan.innerHTML = "📊 LECTURE CONTINUE | OK";
+                        statusSpan.style.color = "#8f8";
                     }
-                    if (lastGoodRaw) {
-                        // on affiche le dernier poids stable mais avec avertissement
-                        weightElement.innerHTML = lastGoodRaw + " ⚡";
-                    } else {
-                        weightElement.innerHTML = "-- -- --";
-                    }
-                }
-            } catch(err) {
-                console.error(err);
-                statusElement.innerHTML = "ERREUR DE TRAITEMENT";
-            }
-            // Boucle rapide mais pas trop pour économiser batterie (250-300ms)
-            setTimeout(() => { if(activeProcess) captureAndRead(); }, 260);
-        }
-
-        // FORCER un refresh immédiat + recalage
-        function forceCaptureNow() {
-            statusElement.innerHTML = "⚡ FORCE SCAN | RECHERCHE...";
-            if (activeProcess) {
-                // on relance un cycle immédiat (pas besoin de stopper)
-                captureAndRead();
-            }
-        }
-
-        // Ajustement dynamique du viseur / ROI selon orientation
-        function adjustRoiToAspect() {
-            if (video.videoWidth && video.videoHeight) {
-                let ratio = video.videoWidth / video.videoHeight;
-                if (ratio > 1.6) {
-                    // paysage large, zone centrale adaptée
-                    roi = { x: 0.22, y: 0.42, width: 0.56, height: 0.18 };
                 } else {
-                    // portrait classique (majorité smartphones)
-                    roi = { x: 0.12, y: 0.38, width: 0.76, height: 0.22 };
+                    weightDisplay.innerText = cleanNumber + "?";
+                    statusSpan.innerHTML = "🔄 STABILISATION...";
+                    statusSpan.style.color = "#ff0";
                 }
-                // mise à jour du style visuel du cadre
-                const visorDiv = document.querySelector('.visor');
-                if (visorDiv) {
-                    visorDiv.style.top = (roi.y * 100) + '%';
-                    visorDiv.style.left = (roi.x * 100) + '%';
-                    visorDiv.style.width = (roi.width * 100) + '%';
-                    visorDiv.style.height = (roi.height * 100) + '%';
+            } else {
+                valueBuffer = [];
+                if (lastStableValue) {
+                    weightDisplay.innerText = lastStableValue;
+                } else {
+                    weightDisplay.innerText = "----";
                 }
+                statusSpan.innerHTML = "🔍 AUCUN CHIFFRE | CADREZ L'AFFICHAGE";
+                statusSpan.style.color = "#f80";
             }
+            
+            // Boucle ~200ms (rapide et réactif)
+            setTimeout(captureAndAnalyze, 200);
         }
-
-        // initialisation vidéo + resize observer
-        video.addEventListener('loadedmetadata', () => {
-            adjustRoiToAspect();
-            setTimeout(adjustRoiToAspect, 200);
-        });
-        window.addEventListener('resize', () => adjustRoiToAspect());
         
-        // Lancement process
-        initCamera().then(() => {
-            // on attend que la vidéo soit prête pour démarrer le pipeline robuste
-            const startPipeline = () => {
-                if (video.videoWidth > 0) {
-                    adjustRoiToAspect();
-                    activeProcess = true;
-                    captureAndRead();
+        // ========== AJUSTEMENT DYNAMIQUE DU VISEUR ==========
+        function updateVisorPosition() {
+            const visor = document.querySelector('.visor');
+            if (visor) {
+                visor.style.top = (roi.y * 100) + '%';
+                visor.style.left = (roi.x * 100) + '%';
+                visor.style.width = (roi.width * 100) + '%';
+                visor.style.height = (roi.height * 100) + '%';
+            }
+        }
+        
+        // Adaptation selon le format de la caméra
+        function adaptROI() {
+            if (video.videoWidth && video.videoHeight) {
+                const ratio = video.videoWidth / video.videoHeight;
+                if (ratio > 1.5) {
+                    // Format large
+                    roi = { x: 0.18, y: 0.40, width: 0.64, height: 0.20 };
                 } else {
-                    setTimeout(startPipeline, 150);
+                    // Format portrait (standard smartphone)
+                    roi = { x: 0.10, y: 0.36, width: 0.80, height: 0.24 };
                 }
-            };
-            startPipeline();
-        }).catch(e => {
-            statusElement.innerHTML = "CAMÉRA INACCESSIBLE";
-            console.error(e);
-        });
-
+                updateVisorPosition();
+            }
+        }
+        
+        // ========== INITIALISATION CAMÉRA ==========
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } }
+                });
+                video.srcObject = stream;
+                await video.play();
+                statusSpan.innerHTML = "🟢 CAMÉRA ACTIVE | CADREZ L'AFFICHAGE";
+                statusSpan.style.color = "#0f0";
+                
+                // Attendre que la vidéo soit prête
+                video.addEventListener('loadedmetadata', () => {
+                    adaptROI();
+                    setTimeout(adaptROI, 100);
+                });
+                
+                // Démarrer l'analyse
+                setTimeout(() => {
+                    if (video.videoWidth > 0) {
+                        adaptROI();
+                        captureAndAnalyze();
+                    }
+                }, 500);
+                
+            } catch (err) {
+                console.error(err);
+                statusSpan.innerHTML = "❌ CAMÉRA INACCESSIBLE | VÉRIFIEZ LES PERMISSIONS";
+                statusSpan.style.color = "#f00";
+            }
+        }
+        
+        // Force une lecture immédiate
         forceBtn.addEventListener('click', () => {
-            forceCaptureNow();
+            statusSpan.innerHTML = "⚡ LECTURE FORCÉE...";
+            valueBuffer = [];
+            setTimeout(() => captureAndAnalyze(), 50);
         });
-
-        // Nettoyage propre si nécessaire
+        
+        // Redimensionnement : ajuster le viseur
+        window.addEventListener('resize', () => adaptROI());
+        
+        // Lancer la caméra
+        initCamera();
+        
+        // Nettoyage
         window.addEventListener('beforeunload', () => {
-            activeProcess = false;
+            isScanning = false;
             if (video.srcObject) {
-                let tracks = video.srcObject.getTracks();
-                tracks.forEach(track => track.stop());
+                video.srcObject.getTracks().forEach(t => t.stop());
             }
         });
+        
     })();
 </script>
 </body>
