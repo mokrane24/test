@@ -3,66 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance Pro</title>
+    <title>Scanner Balance Pro - Mode Segment</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        :root { --neon: #00ff00; --bg: #121212; }
-        body { margin: 0; font-family: 'Courier New', monospace; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        :root { --primary: #00ff00; --bg: #0a0a0a; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; }
         
-        /* Camera */
-        #cam-container { position: relative; flex: 1; background: #000; }
+        /* Caméra */
+        #camera-wrap { position: relative; flex: 1; background: #000; overflow: hidden; }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Viseur Industriel */
-        .visor {
+        /* Viseur ultra-précis */
+        .overlay {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 80%; height: 25%; border: 2px solid var(--neon);
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.7);
-            border-radius: 8px; z-index: 5;
+            width: 85%; height: 25%; border: 2px solid var(--primary);
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.8);
+            border-radius: 4px; z-index: 10;
         }
-        .visor::after { content: "ALIGNER LES CHIFFRES ICI"; position: absolute; top: -25px; left: 0; font-size: 10px; color: var(--neon); }
 
-        /* Interface */
-        .ui { background: #1e1e1e; padding: 20px; border-top: 2px solid #333; text-align: center; }
-        #result { font-size: 4rem; font-weight: bold; color: var(--neon); text-shadow: 0 0 10px rgba(0,255,0,0.5); margin: 10px 0; min-height: 5rem; }
+        /* Interface Basse */
+        .panel { background: #1a1a1a; padding: 25px; border-top: 1px solid #333; text-align: center; }
+        #result { font-size: 4.5rem; font-weight: 800; color: var(--primary); font-family: monospace; margin-bottom: 15px; }
         
         button {
-            width: 100%; padding: 20px; font-size: 1.2rem; font-weight: bold;
-            background: var(--neon); color: black; border: none; border-radius: 12px;
-            cursor: pointer; transition: 0.2s;
+            width: 100%; padding: 20px; font-size: 1.4rem; font-weight: bold;
+            background: var(--primary); color: black; border: none; border-radius: 12px;
+            text-transform: uppercase; cursor: pointer;
         }
-        button:active { transform: scale(0.98); opacity: 0.8; }
-        button:disabled { background: #444; color: #888; }
+        button:disabled { opacity: 0.3; }
 
-        .info { font-size: 0.8rem; color: #888; margin-top: 10px; }
-        canvas { display: none; } /* On cache les canvas de calcul */
+        .log { font-size: 0.8rem; color: #666; margin-top: 12px; }
+        canvas { display: none; }
     </style>
 </head>
 <body>
 
-    <div id="cam-container">
+    <div id="camera-wrap">
         <video id="webcam" autoplay playsinline></video>
-        <div class="visor"></div>
+        <div class="overlay"></div>
     </div>
 
-    <div class="ui">
-        <div id="result">--</div>
-        <button id="btn-scan">SCANNER MAINTENANT</button>
-        <div id="status" class="info">Prêt pour détection 7-segments</div>
+    <div class="panel">
+        <div id="result">----</div>
+        <button id="scan-btn">LIRE LE POIDS</button>
+        <div id="status" class="log">Prêt - Alignez les chiffres dans le cadre</div>
     </div>
 
-    <canvas id="c-proc"></canvas>
+    <canvas id="main-canvas"></canvas>
 
     <script>
-        class BalanceScanner {
+        class ProScanner {
             constructor() {
                 this.video = document.getElementById('webcam');
-                this.btn = document.getElementById('btn-scan');
+                this.btn = document.getElementById('scan-btn');
                 this.res = document.getElementById('result');
                 this.status = document.getElementById('status');
-                this.canvas = document.getElementById('c-proc');
+                this.canvas = document.getElementById('main-canvas');
                 
-                this.btn.onclick = () => this.scan();
+                this.btn.onclick = () => this.executeScan();
                 this.init();
             }
 
@@ -72,101 +70,86 @@
                         video: { facingMode: 'environment', width: 1280, height: 720 }
                     });
                     this.video.srcObject = stream;
-                } catch (e) {
-                    this.status.innerText = "Erreur caméra : Vérifiez HTTPS";
-                }
+                } catch (e) { this.status.innerText = "Erreur : Activez la caméra (HTTPS requis)"; }
             }
 
-            // Nettoyage spécifique pour écran LED/LCD
-            preprocess(ctx, w, h) {
+            // Prétraitement de l'image (Simulation de la clarté EasyOCR)
+            processFrame(ctx, w, h) {
                 const img = ctx.getImageData(0, 0, w, h);
                 const d = img.data;
                 for (let i = 0; i < d.length; i += 4) {
-                    // Gris pondéré
-                    let g = d[i] * 0.3 + d[i+1] * 0.59 + d[i+2] * 0.11;
-                    // Contraste extrême (Seuil à 130)
-                    let v = (g > 130) ? 255 : 0; 
-                    // Inversion pour Tesseract (doit être noir sur blanc)
-                    d[i] = d[i+1] = d[i+2] = (v === 255) ? 0 : 255;
+                    let avg = (d[i] + d[i+1] + d[i+2]) / 3;
+                    // On force les chiffres LED à devenir noirs et le fond blanc pur
+                    let v = (avg > 125) ? 0 : 255; 
+                    d[i] = d[i+1] = d[i+2] = v;
                 }
                 ctx.putImageData(img, 0, 0);
             }
 
-            async scan() {
+            async executeScan() {
                 this.btn.disabled = true;
                 this.res.innerText = "...";
-                this.res.style.color = "#888";
+                this.status.innerText = "Calcul des segments...";
 
                 const vW = this.video.videoWidth;
                 const vH = this.video.videoHeight;
-                
-                // Zone du viseur
-                const rw = vW * 0.8, rh = vH * 0.25;
+                const rw = vW * 0.85, rh = vH * 0.25;
                 const rx = (vW - rw) / 2, ry = (vH - rh) / 2;
 
                 this.canvas.width = rw;
                 this.canvas.height = rh;
                 const ctx = this.canvas.getContext('2d', {willReadFrequently: true});
                 
-                // 1. Capture & Nettoyage
+                // 1. Capture de la zone
                 ctx.drawImage(this.video, rx, ry, rw, rh, 0, 0, rw, rh);
-                this.preprocess(ctx, rw, rh);
+                this.processFrame(ctx, rw, rh);
 
-                // 2. Segmentation des colonnes
-                const img = ctx.getImageData(0, 0, rw, rh);
-                const d = img.data;
-                let cols = new Array(rw).fill(0);
-                
+                // 2. Segmentation intelligente (Détecte les colonnes de pixels)
+                const imgData = ctx.getImageData(0, 0, rw, rh).data;
+                let boxes = [];
+                let active = false, start = 0;
+
                 for (let x = 0; x < rw; x++) {
+                    let hasBlack = false;
                     for (let y = 0; y < rh; y++) {
-                        if (d[(y * rw + x) * 4] === 0) cols[x]++; // Compte les pixels noirs
+                        if (imgData[(y * rw + x) * 4] === 0) { hasBlack = true; break; }
+                    }
+
+                    if (hasBlack && !active) { active = true; start = x; }
+                    else if (!hasBlack && active) {
+                        active = false;
+                        if (x - start > 8) boxes.push({x: start, w: x - start});
                     }
                 }
 
-                // 3. Extraction des chiffres
-                let digits = [];
-                let inDigit = false, start = 0;
-                for (let i = 0; i < cols.length; i++) {
-                    if (cols[i] > 3 && !inDigit) { inDigit = true; start = i; }
-                    else if (cols[i] <= 3 && inDigit) {
-                        inDigit = false;
-                        if (i - start > 5) { // Éviter les parasites trop fins
-                            digits.push({x: start, w: i - start});
-                        }
-                    }
+                this.status.innerText = `Analyse de ${boxes.length} chiffres...`;
+
+                // 3. OCR par caractère (Mode Single Char)
+                let finalPoids = "";
+                for (let box of boxes) {
+                    const charCanvas = document.createElement('canvas');
+                    charCanvas.width = box.w + 40;
+                    charCanvas.height = rh + 40;
+                    const cCtx = charCanvas.getContext('2d');
+                    cCtx.fillStyle = "white";
+                    cCtx.fillRect(0,0, charCanvas.width, charCanvas.height);
+                    cCtx.drawImage(this.canvas, box.x, 0, box.w, rh, 20, 20, box.w, rh);
+
+                    const { data: { text } } = await Tesseract.recognize(charCanvas, 'eng', {
+                        tessedit_char_whitelist: '0123456789',
+                        tessedit_pageseg_mode: '10' // Traite comme un seul caractère
+                    });
+                    finalPoids += text.trim();
                 }
 
-                this.status.innerText = `Détecté : ${digits.length} chiffres`;
-
-                // 4. OCR Individuel
-                let finalStr = "";
-                for (let box of digits) {
-                    const dCanvas = document.createElement('canvas');
-                    // On ajoute une marge et on force une taille minimum (Tesseract aime le 60x60 min)
-                    dCanvas.width = box.w + 20;
-                    dCanvas.height = rh + 20;
-                    const dCtx = dCanvas.getContext('2d');
-                    dCtx.fillStyle = "white";
-                    dCtx.fillRect(0,0, dCanvas.width, dCanvas.height);
-                    dCtx.drawImage(this.canvas, box.x, 0, box.w, rh, 10, 10, box.w, rh);
-
-                    try {
-                        const { data: { text } } = await Tesseract.recognize(dCanvas, 'eng', {
-                            tessedit_char_whitelist: '0123456789',
-                            tessedit_pageseg_mode: '10' // SINGLE_CHAR
-                        });
-                        finalStr += text.trim();
-                    } catch(e) {}
-                }
-
-                // 5. Affichage
-                this.res.innerText = finalStr || "ERREUR";
-                this.res.style.color = finalStr ? "var(--neon)" : "red";
+                // Nettoyage et affichage
+                this.res.innerText = finalPoids || "--";
+                this.status.innerText = finalPoids ? "Lecture terminée" : "Échec : Rapprochez-vous";
                 this.btn.disabled = false;
             }
         }
 
-        window.onload = () => new BalanceScanner();
+        window.onload = () => new ProScanner();
     </script>
 </body>
 </html>
