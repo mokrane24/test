@@ -3,93 +3,594 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance Ultra</title>
+    <title>Scanner Balance - Éditable</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: monospace; overflow: hidden; text-align: center; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; color: #fff; font-family: monospace; overflow-x: hidden; }
+        
+        .container { display: flex; flex-direction: column; height: 100vh; }
+        
         video { width: 100%; height: 50vh; object-fit: cover; border-bottom: 2px solid #333; }
+        
         .visor {
             position: absolute; top: 15vh; left: 10%; width: 80%; height: 20vh;
             border: 2px solid #0f0; box-shadow: 0 0 15px #0f0; pointer-events: none;
+            z-index: 1;
         }
-        .controls { padding: 20px; }
-        #weight { font-size: 5rem; color: #0f0; margin: 10px 0; font-weight: bold; }
-        canvas { width: 90%; height: auto; border: 1px solid #444; margin-top: 10px; image-rendering: pixelated; }
-        #status { color: #888; font-size: 12px; }
+        
+        .controls { 
+            flex: 1; 
+            padding: 20px; 
+            overflow-y: auto; 
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .mode-buttons { 
+            display: flex; 
+            gap: 10px; 
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        button { 
+            padding: 10px 15px; 
+            background: #333; 
+            color: #0f0; 
+            border: 1px solid #0f0; 
+            cursor: pointer; 
+            border-radius: 3px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        
+        button.active { 
+            background: #0f0; 
+            color: #000; 
+        }
+        
+        button:hover { 
+            background: #1a1a1a;
+        }
+        
+        #status { 
+            color: #888; 
+            font-size: 12px; 
+            text-align: center;
+        }
+        
+        .result-section {
+            background: #1a1a1a;
+            padding: 15px;
+            border-left: 3px solid #0f0;
+            border-radius: 3px;
+        }
+        
+        .result-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        #weight { 
+            font-size: 3.5rem; 
+            color: #0f0; 
+            margin: 10px 0; 
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        #confidence { 
+            font-size: 11px; 
+            color: #666;
+            text-align: center;
+        }
+        
+        .edit-section {
+            background: #1a1a1a;
+            padding: 15px;
+            border-left: 3px solid #ff9800;
+            border-radius: 3px;
+            display: none;
+        }
+        
+        .edit-section.active {
+            display: block;
+        }
+        
+        .edit-label {
+            font-size: 11px;
+            color: #ff9800;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        
+        .edit-input-container {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        
+        #edit-input {
+            flex: 1;
+            padding: 12px;
+            background: #000;
+            color: #0f0;
+            border: 2px solid #ff9800;
+            font-size: 2rem;
+            text-align: center;
+            font-family: monospace;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+        
+        #edit-input:focus {
+            outline: none;
+            border-color: #ffeb3b;
+            box-shadow: 0 0 10px #ff9800;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-validate {
+            flex: 1;
+            padding: 12px;
+            background: #0f0;
+            color: #000;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        .btn-validate:hover {
+            background: #33ff33;
+        }
+        
+        .btn-cancel {
+            flex: 1;
+            padding: 12px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        .btn-cancel:hover {
+            background: #555;
+        }
+        
+        .history-section {
+            background: #1a1a1a;
+            padding: 15px;
+            border-left: 3px solid #2196f3;
+            border-radius: 3px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .history-label {
+            font-size: 11px;
+            color: #2196f3;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background: #000;
+            margin-bottom: 5px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        .history-value {
+            color: #0f0;
+            font-weight: bold;
+        }
+        
+        .history-time {
+            color: #666;
+            font-size: 11px;
+        }
+        
+        .btn-delete {
+            padding: 2px 6px;
+            background: #f44336;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            border-radius: 2px;
+            font-size: 10px;
+        }
+        
+        .btn-delete:hover {
+            background: #d32f2f;
+        }
+        
+        canvas { 
+            width: 100%; 
+            max-height: 60px;
+            border: 1px solid #333; 
+            margin-top: 5px; 
+            image-rendering: pixelated; 
+            display: none;
+        }
+        
+        canvas.debug-visible {
+            display: block;
+        }
+        
+        .debug-toggle {
+            padding: 8px 12px;
+            background: #333;
+            color: #888;
+            border: 1px solid #555;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        
+        .scan-btn {
+            padding: 15px;
+            background: #0066cc;
+            color: #fff;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 16px;
+            width: 100%;
+        }
+        
+        .scan-btn:hover {
+            background: #0052a3;
+        }
+        
+        .scan-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
 
-    <video id="v" autoplay playsinline></video>
-    <div class="visor"></div>
+    <div class="container">
+        <div style="position: relative;">
+            <video id="v" autoplay playsinline></video>
+            <div class="visor"></div>
+        </div>
 
-    <div class="controls">
-        <div id="status">RECHERCHE DE SIGNAL...</div>
-        <div id="weight">----</div>
-        <canvas id="debug"></canvas>
-        <p>Ajustez la distance pour que les chiffres remplissent le cadre</p>
+        <div class="controls">
+            <div class="mode-buttons">
+                <button id="mode-balance" class="active">Balance Native</button>
+                <button id="mode-enhanced">Enhanced</button>
+                <button id="mode-inverse">Inverse</button>
+                <button id="debug-toggle" class="debug-toggle">Debug OFF</button>
+            </div>
+
+            <div id="status">Initialisation...</div>
+
+            <button id="scan-btn" class="scan-btn">📷 SCANNER</button>
+
+            <div class="result-section">
+                <div class="result-label">Résultat OCR</div>
+                <div id="weight">----</div>
+                <div id="confidence"></div>
+            </div>
+
+            <div class="edit-section" id="edit-section">
+                <div class="edit-label">✏️ Modifier le résultat</div>
+                <div class="edit-input-container">
+                    <input type="text" id="edit-input" placeholder="Entrez le poids">
+                </div>
+                <div class="button-group">
+                    <button class="btn-validate" id="btn-validate">✓ VALIDER</button>
+                    <button class="btn-cancel" id="btn-cancel">✗ Annuler</button>
+                </div>
+            </div>
+
+            <canvas id="debug"></canvas>
+            <canvas id="debug2"></canvas>
+
+            <div class="history-section">
+                <div class="history-label">📊 Historique</div>
+                <div id="history-list"></div>
+            </div>
+        </div>
     </div>
 
     <script>
         const v = document.getElementById('v');
         const canvas = document.getElementById('debug');
+        const canvas2 = document.getElementById('debug2');
         const weightDisp = document.getElementById('weight');
+        const confidenceDisp = document.getElementById('confidence');
         const statusDisp = document.getElementById('status');
+        const editSection = document.getElementById('edit-section');
+        const editInput = document.getElementById('edit-input');
+        const btnValidate = document.getElementById('btn-validate');
+        const btnCancel = document.getElementById('btn-cancel');
+        const scanBtn = document.getElementById('scan-btn');
+        const debugToggle = document.getElementById('debug-toggle');
+        const historyList = document.getElementById('history-list');
+        
         const ctx = canvas.getContext('2d', {alpha: false});
+        const ctx2 = canvas2.getContext('2d', {alpha: false});
+
+        let currentMode = 'balance';
+        let debugMode = false;
+        let lastDetectedWeight = null;
+        let history = [];
+        let isProcessing = false;
+
+        // Mode selection
+        document.getElementById('mode-balance').addEventListener('click', function() {
+            currentMode = 'balance';
+            updateModeButtons();
+        });
+        document.getElementById('mode-enhanced').addEventListener('click', function() {
+            currentMode = 'enhanced';
+            updateModeButtons();
+        });
+        document.getElementById('mode-inverse').addEventListener('click', function() {
+            currentMode = 'inverse';
+            updateModeButtons();
+        });
+        
+        debugToggle.addEventListener('click', function() {
+            debugMode = !debugMode;
+            debugToggle.innerText = debugMode ? 'Debug ON' : 'Debug OFF';
+            debugToggle.style.color = debugMode ? '#0f0' : '#888';
+            document.querySelectorAll('canvas').forEach(c => {
+                c.classList.toggle('debug-visible', debugMode);
+            });
+        });
+
+        // Edit buttons
+        btnValidate.addEventListener('click', function() {
+            const value = editInput.value.trim();
+            if (value) {
+                lastDetectedWeight = value;
+                weightDisp.innerText = value;
+                weightDisp.style.color = '#0f0';
+                statusDisp.innerText = 'POIDS VALIDÉ MANUELLEMENT';
+                statusDisp.style.color = '#0f0';
+                addToHistory(value, 'manual');
+                editSection.classList.remove('active');
+            }
+        });
+        
+        btnCancel.addEventListener('click', function() {
+            editSection.classList.remove('active');
+            editInput.value = '';
+        });
+        
+        scanBtn.addEventListener('click', function() {
+            if (!isProcessing) {
+                scanBtn.disabled = true;
+                statusDisp.innerText = 'SCANNING...';
+                statusDisp.style.color = '#ff9800';
+            }
+        });
+
+        function updateModeButtons() {
+            document.querySelectorAll('.mode-buttons button:not(.debug-toggle)').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('mode-' + currentMode).classList.add('active');
+        }
+
+        function addToHistory(value, type = 'auto') {
+            const time = new Date().toLocaleTimeString();
+            history.unshift({ value, time, type });
+            if (history.length > 10) history.pop();
+            
+            updateHistoryUI();
+        }
+        
+        function updateHistoryUI() {
+            historyList.innerHTML = history.map((item, idx) => `
+                <div class="history-item">
+                    <span>
+                        <span class="history-value">${item.value}</span>
+                        <span style="font-size: 10px; color: #666;"> (${item.type})</span>
+                    </span>
+                    <span class="history-time">${item.time}</span>
+                </div>
+            `).join('');
+        }
 
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(s => v.srcObject = s);
+            .then(s => v.srcObject = s)
+            .catch(e => {
+                statusDisp.innerText = "Erreur caméra: " + e.message;
+                statusDisp.style.color = "#f00";
+            });
 
         async function process() {
             if (v.videoWidth === 0) return requestAnimationFrame(process);
+            
+            // Vérifier si bouton scan a été cliqué
+            if (scanBtn.disabled) {
+                isProcessing = true;
+                await performScan();
+                scanBtn.disabled = false;
+                isProcessing = false;
+            }
 
-            // 1. Capture & Nettoyage Extrême
-            const w = 300; const h = 100;
-            canvas.width = w; canvas.height = h;
-            
-            // On zoom sur le centre
-            ctx.drawImage(v, v.videoWidth*0.15, v.videoHeight*0.4, v.videoWidth*0.7, v.videoHeight*0.2, 0, 0, w, h);
-            
+            requestAnimationFrame(process);
+        }
+
+        async function performScan() {
+            const w = 400;
+            const h = 120;
+            canvas.width = w;
+            canvas.height = h;
+            canvas2.width = w;
+            canvas2.height = h;
+
+            ctx.drawImage(v, v.videoWidth*0.1, v.videoHeight*0.35, v.videoWidth*0.8, v.videoHeight*0.3, 0, 0, w, h);
+
             let imgData = ctx.getImageData(0, 0, w, h);
             let d = imgData.data;
 
-            // Seuil adaptatif simplifié (Otsu)
-            let total = 0;
-            for(let i=0; i<d.length; i+=4) total += (d[i]+d[i+1]+d[i+2])/3;
-            let avg = total / (d.length/4);
+            // Calcul luminosité
+            let totalLum = 0;
+            for(let i=0; i<d.length; i+=4) {
+                totalLum += (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
+            }
+            let avgLum = totalLum / (d.length/4);
+
+            // Threshold adaptatif selon mode
+            let threshold;
+            if (currentMode === 'balance') {
+                threshold = avgLum * 0.8;
+            } else if (currentMode === 'enhanced') {
+                threshold = avgLum * 0.85;
+            } else {
+                threshold = avgLum * 1.1;
+            }
 
             for(let i=0; i<d.length; i+=4) {
-                let b = (d[i]+d[i+1]+d[i+2])/3;
-                let val = (b > avg + 20) ? 255 : 0; // On isole les segments brillants
-                // Inversion pour l'OCR : Fond blanc, Segments NOIRS
-                d[i] = d[i+1] = d[i+2] = (val === 255) ? 0 : 255;
+                let gray = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+                let binary;
+
+                if (currentMode === 'inverse') {
+                    binary = (gray < threshold) ? 255 : 0;
+                } else {
+                    binary = (gray > threshold) ? 255 : 0;
+                }
+
+                d[i] = d[i+1] = d[i+2] = binary;
+                d[i+3] = 255;
             }
+
             ctx.putImageData(imgData, 0, 0);
 
-            // 2. Tentative OCR avec Tesseract optimisé "Caractère par Caractère"
+            imgData = dilate(imgData, 1);
+            ctx.putImageData(imgData, 0, 0);
+
+            if (currentMode === 'enhanced') {
+                imgData = enhanceContrast(imgData);
+                ctx.putImageData(imgData, 0, 0);
+            }
+
+            ctx2.putImageData(imgData, 0, 0);
+
+            // OCR
             try {
                 const result = await Tesseract.recognize(canvas, 'eng', {
                     tessedit_char_whitelist: '0123456789.,',
-                    tessedit_pageseg_mode: '7', // Traite l'image comme une seule ligne de texte
-                    tessedit_ocr_engine_mode: '1' // Mode LSTM uniquement
+                    tessedit_pageseg_mode: '7',
+                    tessedit_ocr_engine_mode: '1'
                 });
 
-                let txt = result.data.text.replace(/[^0-9]/g, "");
-                
-                if (txt.length > 0) {
-                    weightDisp.innerText = txt;
-                    statusDisp.innerText = "LECTURE EN COURS";
-                    statusDisp.style.color = "#0f0";
-                } else {
-                    statusDisp.innerText = "SANS CHIFFRE - RAPPROCHEZ-VOUS";
-                    statusDisp.style.color = "#f00";
-                }
-            } catch(e) { console.error(e); }
+                let txt = result.data.text.trim();
 
-            setTimeout(process, 300); // Boucle toutes les 300ms
+                txt = txt.replace(/O/g, '0')
+                         .replace(/o/g, '0')
+                         .replace(/I/g, '1')
+                         .replace(/l/g, '1')
+                         .replace(/Z/g, '2')
+                         .replace(/B/g, '8')
+                         .replace(/S/g, '5')
+                         .replace(/G/g, '9')
+                         .replace(/[^0-9.]/g, '');
+
+                if (txt.includes('.')) {
+                    let parts = txt.split('.');
+                    txt = parts[0] + '.' + parts.slice(1).join('');
+                }
+
+                let confidence = result.data.confidence;
+
+                if (txt.length > 0 && confidence > 0.3) {
+                    lastDetectedWeight = txt;
+                    weightDisp.innerText = txt;
+                    weightDisp.style.color = '#0f0';
+                    statusDisp.innerText = currentMode.toUpperCase() + ' - DÉTECTÉ';
+                    statusDisp.style.color = '#0f0';
+                    confidenceDisp.innerText = `Confiance: ${(confidence*100).toFixed(0)}%`;
+                    
+                    // Afficher la section d'édition
+                    editInput.value = txt;
+                    editSection.classList.add('active');
+                    editInput.focus();
+                    editInput.select();
+                    
+                } else {
+                    weightDisp.innerText = '----';
+                    weightDisp.style.color = '#f00';
+                    statusDisp.innerText = currentMode.toUpperCase() + ' - PAS DE CHIFFRE';
+                    statusDisp.style.color = '#f00';
+                    editSection.classList.remove('active');
+                }
+
+            } catch(e) {
+                console.error(e);
+                weightDisp.innerText = 'ERREUR';
+                statusDisp.innerText = 'Erreur OCR: ' + e.message;
+                statusDisp.style.color = '#f00';
+                editSection.classList.remove('active');
+            }
+        }
+
+        function dilate(imageData, kernel = 1) {
+            const data = imageData.data;
+            const w = imageData.width;
+            const h = imageData.height;
+            const temp = new Uint8ClampedArray(data);
+
+            for (let y = kernel; y < h - kernel; y++) {
+                for (let x = kernel; x < w - kernel; x++) {
+                    let maxVal = 0;
+                    for (let ky = -kernel; ky <= kernel; ky++) {
+                        for (let kx = -kernel; kx <= kernel; kx++) {
+                            const idx = ((y + ky) * w + (x + kx)) * 4;
+                            maxVal = Math.max(maxVal, temp[idx]);
+                        }
+                    }
+                    const idx = (y * w + x) * 4;
+                    data[idx] = data[idx+1] = data[idx+2] = maxVal;
+                }
+            }
+
+            return imageData;
+        }
+
+        function enhanceContrast(imageData) {
+            const data = imageData.data;
+
+            let min = 255, max = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                min = Math.min(min, data[i]);
+                max = Math.max(max, data[i]);
+            }
+
+            const range = max - min || 1;
+            for (let i = 0; i < data.length; i += 4) {
+                const normalized = ((data[i] - min) / range) * 255;
+                data[i] = data[i+1] = data[i+2] = normalized;
+            }
+
+            return imageData;
         }
 
         v.onplay = () => process();
+
     </script>
 </body>
 </html>
