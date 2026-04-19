@@ -1,151 +1,143 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Scanner Balance PRO (Stable & Manuel)</title>
-<style>
-    body { background:#000; color:#fff; text-align:center; font-family:sans-serif; margin:0; }
-    .camera-container { position:relative; width:100%; height:45vh; background:#111; overflow:hidden; }
-    video { width:100%; height:100%; object-fit:cover; }
-    .roi { position:absolute; border:2px solid #0f0; top:35%; left:15%; width:70%; height:20%; box-shadow: 0 0 10px #0f0; pointer-events:none; }
-    
-    .live-area { background:#1a1a1a; padding:10px; border-bottom:1px solid #333; }
-    #canvas { width:200px; height:60px; border:1px solid #555; background:#000; }
-    
-    .result-area { padding:20px; }
-    #weight-input { 
-        background:transparent; border:none; color:#0f0; font-size:4rem; 
-        width:100%; text-align:center; font-family:monospace; font-weight:bold;
-    }
-    
-    button { 
-        padding:15px 30px; font-size:1.1rem; font-weight:bold; border-radius:8px; 
-        border:none; cursor:pointer; margin:5px;
-    }
-    .btn-lock { background:#0f0; color:#000; width:80%; }
-    .btn-reset { background:#444; color:#fff; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scanner FINAL - Mokrane</title>
+    <style>
+        body { background:#000; color:#fff; text-align:center; font-family:sans-serif; margin:0; }
+        .cam-container { position:relative; width:100%; height:40vh; background:#111; }
+        video { width:100%; height:100%; object-fit:cover; }
+        .roi { position:absolute; border:2px solid #0f0; top:30%; left:10%; width:80%; height:30%; pointer-events:none; }
+        
+        #result-box { padding:20px; background:#1a1a1a; }
+        #weight-val { font-size:5rem; color:#0f0; font-weight:bold; width:100%; border:none; background:none; text-align:center; }
+        
+        canvas { width:90%; height:auto; border:1px solid #444; margin:10px 0; }
+        .btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:10px; }
+        button { padding:20px; border-radius:10px; border:none; font-weight:bold; font-size:1rem; }
+        .btn-ok { background:#0f0; color:#000; grid-column: span 2; font-size:1.4rem; }
+    </style>
 </head>
 <body>
 
-<div class="camera-container">
-    <video id="video" autoplay playsinline></video>
+<div class="cam-container">
+    <video id="v" autoplay playsinline></video>
     <div class="roi"></div>
 </div>
 
-<div class="live-area">
-    <canvas id="canvas" width="400" height="120"></canvas>
-    <div id="live-status" style="font-size:0.8rem; color:#888; margin-top:5px;">ANALYSE EN COURS...</div>
-</div>
-
-<div class="result-area">
-    <input type="text" id="weight-input" value="----" inputmode="decimal">
-    <br>
-    <button class="btn-lock" id="btn-lock">VALIDER LE CHIFFRE</button>
-    <br>
-    <button class="btn-reset" onclick="location.reload()">RÉINITIALISER</button>
+<div id="result-box">
+    <canvas id="c"></canvas>
+    <input type="text" id="weight-val" value="----">
+    <div class="btns">
+        <button class="btn-ok" onclick="lock()">VALIDER LE POIDS</button>
+        <button style="background:#444; color:#fff;" onclick="location.reload()">RESET</button>
+        <button style="background:#0055ff; color:#fff;" onclick="save()">SAVE</button>
+    </div>
 </div>
 
 <script>
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const weightInput = document.getElementById('weight-input');
-const lockBtn = document.getElementById('btn-lock');
-const liveStatus = document.getElementById('live-status');
+const v = document.getElementById('v');
+const c = document.getElementById('c');
+const ctx = c.getContext('2d', {alpha: false});
+const resInput = document.getElementById('weight-val');
 
-let currentDetectedValue = "";
-let isScanning = true;
+let lastSeen = "";
 
 navigator.mediaDevices.getUserMedia({ video: { facingMode:"environment" } })
-    .then(stream => video.srcObject = stream);
+    .then(s => v.srcObject = s);
 
-function preprocess(imgData) {
-    const d = imgData.data;
-    for (let i=0; i<d.length; i+=4){
-        let gray = 0.3*d[i] + 0.59*d[i+1] + 0.11*d[i+2];
-        let val = gray > 110 ? 255 : 0; // Seuil segments brillants
-        d[i]=d[i+1]=d[i+2]=val;
-    }
-    return imgData;
-}
-
-function detectDigit(block) {
-    const w = block.width;
-    const h = block.height;
-    const data = block.data;
-
-    function count(x1, y1, x2, y2){
-        let c=0, t=0;
-        for(let y=Math.floor(y1); y<Math.floor(y2); y++){
-            for(let x=Math.floor(x1); x<Math.floor(x2); x++){
-                const i = (y * w + x) * 4;
-                if(data[i] > 128) c++;
-                t++;
-            }
-        }
-        return c/t;
-    }
-
-    // Mapping des segments amélioré (Positions relatives)
-    const seg = [
-        count(w*0.3, h*0.1, w*0.7, h*0.2),  // 0: top
-        count(w*0.75, h*0.2, w*0.9, h*0.45),// 1: top-right
-        count(w*0.75, h*0.55, w*0.9, h*0.8),// 2: bottom-right
-        count(w*0.3, h*0.8, w*0.7, h*0.9),  // 3: bottom
-        count(w*0.1, h*0.55, w*0.25, h*0.8),// 4: bottom-left
-        count(w*0.1, h*0.2, w*0.25, h*0.45),// 5: top-left
-        count(w*0.3, h*0.45, w*0.7, h*0.55) // 6: middle
-    ].map(v => v > 0.25 ? 1 : 0);
-
-    const map = {
-        "1111110":"0", "0110000":"1", "1101101":"2", "1111001":"3", "0110011":"4",
-        "1011011":"5", "1011111":"6", "1110000":"7", "1111111":"8", "1111011":"9"
-    };
-    return map[seg.join("")] || "";
-}
-
-async function loop(){
-    if(!isScanning) return;
-
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if(vw > 0) {
-        // Zone ROI : centre de l'écran
-        ctx.drawImage(video, vw*0.15, vh*0.35, vw*0.7, vh*0.2, 0, 0, 400, 120);
-
-        let img = ctx.getImageData(0,0,400,120);
-        img = preprocess(img);
-        ctx.putImageData(img,0,0);
-
-        let result = "";
-        const digitWidth = 400 / 4; // Supposons 4 chiffres
-        for (let i=0; i<4; i++){
-            const block = ctx.getImageData(i*digitWidth, 0, digitWidth, 120);
-            result += detectDigit(block);
-        }
-
-        if(result.length > 0) {
-            currentDetectedValue = result;
-            liveStatus.innerText = "VU : " + result;
-            liveStatus.style.color = "#0f0";
-        }
-    }
-    setTimeout(loop, 150);
-}
-
-// Bloquer la valeur
-lockBtn.onclick = () => {
-    if(currentDetectedValue) {
-        weightInput.value = currentDetectedValue;
-        weightInput.style.backgroundColor = "rgba(0,255,0,0.1)";
-        setTimeout(() => weightInput.style.backgroundColor = "transparent", 300);
-    }
+// Mapping des segments 7-segments (Standard Industriel)
+const map = {
+    "1111110":"0", "0110000":"1", "1101101":"2", "1111001":"3", "0110011":"4",
+    "1011011":"5", "1011111":"6", "1110000":"7", "1111111":"8", "1111011":"9"
 };
 
-video.onplay = loop;
+function process() {
+    if(v.videoWidth === 0) return requestAnimationFrame(process);
+    
+    c.width = 400; c.height = 120;
+    // Capture de la zone centrale
+    ctx.drawImage(v, v.videoWidth*0.1, v.videoHeight*0.3, v.videoWidth*0.8, v.videoHeight*0.3, 0, 0, 400, 120);
 
+    let img = ctx.getImageData(0,0,400,120);
+    let d = img.data;
+    
+    // Seuil automatique (Binarisation)
+    let sum = 0;
+    for(let i=0; i<d.length; i+=4) sum += (d[i]+d[i+1]+d[i+2])/3;
+    let threshold = (sum / (d.length/4)) - 20;
+
+    for(let i=0; i<d.length; i+=4) {
+        let brightness = (d[i]+d[i+1]+d[i+2])/3;
+        let val = (brightness > threshold) ? 0 : 255; // Segments noirs sur fond blanc
+        d[i]=d[i+1]=d[i+2]=val;
+    }
+    ctx.putImageData(img, 0, 0);
+
+    // DÉTECTION DE CHIFFRES (Recherche de colonnes actives)
+    let finalStr = "";
+    let inDigit = false;
+    let startX = 0;
+    let digits = [];
+
+    for(let x=0; x<400; x++) {
+        let hasBlack = false;
+        for(let y=10; y<110; y++) {
+            if(d[(y*400+x)*4] === 0) { hasBlack = true; break; }
+        }
+        if(hasBlack && !inDigit) { inDigit = true; startX = x; }
+        if(!hasBlack && inDigit) {
+            inDigit = false;
+            if(x - startX > 10) digits.push({x: startX, w: x - startX});
+        }
+    }
+
+    // ANALYSE DE CHAQUE CHIFFRE TROUVÉ
+    digits.forEach(box => {
+        function check(px, py, pw, ph) {
+            let count = 0, total = 0;
+            for(let y=Math.floor(py); y<Math.floor(py+ph); y++) {
+                for(let x=Math.floor(px); x<Math.floor(px+pw); x++) {
+                    if(d[(y*400+x)*4] === 0) count++;
+                    total++;
+                }
+            }
+            return (count/total > 0.3) ? "1" : "0";
+        }
+
+        let bx = box.x, bw = box.w, bh = 120;
+        let s = "";
+        s += check(bx + bw*0.2, 5, bw*0.6, 15);      // top
+        s += check(bx + bw*0.7, 15, bw*0.25, 40);   // top-right
+        s += check(bx + bw*0.7, 65, bw*0.25, 40);   // bot-right
+        s += check(bx + bw*0.2, 100, bw*0.6, 15);   // bottom
+        s += check(bx + bw*0.05, 65, bw*0.25, 40);  // bot-left
+        s += check(bx + bw*0.05, 15, bw*0.25, 40);  // top-left
+        s += check(bx + bw*0.2, 50, bw*0.6, 20);     // middle
+        
+        finalStr += map[s] || "";
+    });
+
+    if(finalStr) {
+        lastSeen = finalStr;
+        resInput.style.color = "#888"; // Mode "Scan en cours"
+        if(resInput.value === "----") resInput.value = finalStr;
+    }
+    
+    requestAnimationFrame(process);
+}
+
+function lock() {
+    resInput.value = lastSeen;
+    resInput.style.color = "#0f0"; // Mode "Validé"
+}
+
+function save() {
+    alert("Poids enregistré : " + resInput.value);
+}
+
+v.onplay = process;
 </script>
 </body>
 </html>
