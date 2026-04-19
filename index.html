@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner LED Rouge Pur</title>
+    <title>Scanner Balance - Zone Ajustable</title>
     <style>
         body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; }
         
@@ -18,12 +18,12 @@
         
         .roi-guide {
             position: absolute;
-            top: 20%;
-            left: 5%;
-            width: 90%;
-            height: 30%;
-            border: 3px dashed #ff0000;
-            box-shadow: 0 0 15px #ff0000;
+            top: 30%;
+            left: 20%;
+            width: 60%;
+            height: 15%;
+            border: 3px solid #ff0000;
+            box-shadow: 0 0 20px #ff0000;
             pointer-events: none;
             z-index: 10;
         }
@@ -70,7 +70,6 @@
         }
         
         button:hover { background: #ff3333; }
-        button:disabled { background: #666; cursor: not-allowed; }
         
         canvas { 
             width: 100%;
@@ -85,29 +84,39 @@
             font-size: 12px;
             line-height: 1.6;
         }
-        
-        .preview-row {
+
+        .slider-group {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 10px 0;
+            gap: 15px;
+            margin: 15px 0;
         }
-        
-        .preview-item {
+
+        .slider-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .slider-item label {
+            font-size: 11px;
+            color: #ff0000;
+        }
+
+        .slider-item input {
+            width: 100%;
+        }
+
+        .slider-item input[type="range"] {
+            cursor: pointer;
+        }
+
+        .slider-item input[type="number"] {
+            padding: 5px;
             background: #000;
-            padding: 10px;
-            border: 1px solid #333;
-            border-radius: 4px;
-        }
-        
-        .preview-label {
-            font-size: 10px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        
-        .preview-item canvas {
-            margin: 0;
+            border: 1px solid #ff0000;
+            color: #ff0000;
+            text-align: center;
         }
     </style>
 </head>
@@ -122,34 +131,42 @@
     <div class="controls">
         <!-- RÉSULTAT -->
         <div class="section">
-            <div class="section-title">📊 POIDS DÉTECTÉ</div>
+            <div class="section-title">📊 POIDS</div>
             <div id="weight">----</div>
-            <div id="info">En attente...</div>
+            <div id="info">Prêt - cadrez les chiffres</div>
         </div>
 
-        <!-- PRÉVISUALISATIONS -->
+        <!-- AJUSTEMENT ZONE -->
         <div class="section">
-            <div class="section-title">🔴 EXTRACTION LED ROUGE</div>
-            <div class="preview-row">
-                <div class="preview-item">
-                    <div class="preview-label">ORIGINAL</div>
-                    <canvas id="original" width="200" height="80"></canvas>
+            <div class="section-title">🎯 AJUSTER LA ZONE</div>
+            <div class="slider-group">
+                <div class="slider-item">
+                    <label>Position haut (%)</label>
+                    <input type="range" id="roiTop" min="0" max="80" value="30" step="1">
+                    <input type="number" id="roiTopNum" min="0" max="80" value="30">
                 </div>
-                <div class="preview-item">
-                    <div class="preview-label">ROUGE EXTRAIT</div>
-                    <canvas id="red-only" width="200" height="80"></canvas>
+                <div class="slider-item">
+                    <label>Hauteur (%)</label>
+                    <input type="range" id="roiHeight" min="5" max="50" value="15" step="1">
+                    <input type="number" id="roiHeightNum" min="5" max="50" value="15">
+                </div>
+                <div class="slider-item">
+                    <label>Position gauche (%)</label>
+                    <input type="range" id="roiLeft" min="0" max="80" value="20" step="1">
+                    <input type="number" id="roiLeftNum" min="0" max="80" value="20">
+                </div>
+                <div class="slider-item">
+                    <label>Largeur (%)</label>
+                    <input type="range" id="roiWidth" min="10" max="100" value="60" step="1">
+                    <input type="number" id="roiWidthNum" min="10" max="100" value="60">
                 </div>
             </div>
-            <div class="preview-row">
-                <div class="preview-item">
-                    <div class="preview-label">BINARISÉ</div>
-                    <canvas id="binary" width="200" height="80"></canvas>
-                </div>
-                <div class="preview-item">
-                    <div class="preview-label">NETTOYÉ</div>
-                    <canvas id="cleaned" width="200" height="80"></canvas>
-                </div>
-            </div>
+        </div>
+
+        <!-- APERÇU -->
+        <div class="section">
+            <div class="section-title">📷 APERÇU CAPTURÉ</div>
+            <canvas id="preview" width="400" height="100"></canvas>
         </div>
 
         <!-- BOUTONS -->
@@ -165,123 +182,145 @@
     const scanBtn = document.getElementById('scan');
     const resetBtn = document.getElementById('reset');
     const weight = document.getElementById('weight');
+    const preview = document.getElementById('preview');
     const info = document.getElementById('info');
+    const roiGuide = document.querySelector('.roi-guide');
 
-    const canvasOriginal = document.getElementById('original');
-    const canvasRedOnly = document.getElementById('red-only');
-    const canvasBinary = document.getElementById('binary');
-    const canvasCleaned = document.getElementById('cleaned');
+    const roiTopInput = document.getElementById('roiTop');
+    const roiTopNum = document.getElementById('roiTopNum');
+    const roiHeightInput = document.getElementById('roiHeight');
+    const roiHeightNum = document.getElementById('roiHeightNum');
+    const roiLeftInput = document.getElementById('roiLeft');
+    const roiLeftNum = document.getElementById('roiLeftNum');
+    const roiWidthInput = document.getElementById('roiWidth');
+    const roiWidthNum = document.getElementById('roiWidthNum');
 
     let locked = null;
     let stability = 0;
     let lastText = null;
+    let roi = { top: 30, height: 15, left: 20, width: 60 };
+
+    // Sync sliders et inputs
+    roiTopInput.addEventListener('input', (e) => {
+        roi.top = parseInt(e.target.value);
+        roiTopNum.value = roi.top;
+        updateGuide();
+    });
+    roiTopNum.addEventListener('change', (e) => {
+        roi.top = parseInt(e.target.value);
+        roiTopInput.value = roi.top;
+        updateGuide();
+    });
+
+    roiHeightInput.addEventListener('input', (e) => {
+        roi.height = parseInt(e.target.value);
+        roiHeightNum.value = roi.height;
+        updateGuide();
+    });
+    roiHeightNum.addEventListener('change', (e) => {
+        roi.height = parseInt(e.target.value);
+        roiHeightInput.value = roi.height;
+        updateGuide();
+    });
+
+    roiLeftInput.addEventListener('input', (e) => {
+        roi.left = parseInt(e.target.value);
+        roiLeftNum.value = roi.left;
+        updateGuide();
+    });
+    roiLeftNum.addEventListener('change', (e) => {
+        roi.left = parseInt(e.target.value);
+        roiLeftInput.value = roi.left;
+        updateGuide();
+    });
+
+    roiWidthInput.addEventListener('input', (e) => {
+        roi.width = parseInt(e.target.value);
+        roiWidthNum.value = roi.width;
+        updateGuide();
+    });
+    roiWidthNum.addEventListener('change', (e) => {
+        roi.width = parseInt(e.target.value);
+        roiWidthInput.value = roi.width;
+        updateGuide();
+    });
+
+    function updateGuide() {
+        roiGuide.style.top = roi.top + '%';
+        roiGuide.style.left = roi.left + '%';
+        roiGuide.style.width = roi.width + '%';
+        roiGuide.style.height = roi.height + '%';
+    }
 
     // Caméra
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         .then(stream => {
             video.srcObject = stream;
-            info.innerText = '✓ Caméra active\nCadrez les chiffres LED rouges\nPuis cliquez SCANNER';
+            updateGuide();
         })
         .catch(err => {
-            info.innerText = '✗ Erreur caméra:\n' + err.message;
+            info.innerText = '✗ Erreur caméra: ' + err.message;
         });
 
-    function extractRedAndAnalyze() {
+    scanBtn.addEventListener('click', () => {
         if (video.videoWidth === 0) {
             info.innerText = '✗ Vidéo non prête';
-            return null;
+            return;
         }
 
         scanBtn.disabled = true;
         info.innerText = '⏳ Traitement...';
 
-        // ROI fixe (20% top, 30% height, 5% left, 90% width)
+        // Capturer la ROI
         const vw = video.videoWidth;
         const vh = video.videoHeight;
-        const x = Math.floor(vw * 0.05);
-        const y = Math.floor(vh * 0.20);
-        const w = Math.floor(vw * 0.90);
-        const h = Math.floor(vh * 0.30);
+        const x = Math.floor(vw * (roi.left / 100));
+        const y = Math.floor(vh * (roi.top / 100));
+        const w = Math.floor(vw * (roi.width / 100));
+        const h = Math.floor(vh * (roi.height / 100));
 
-        // Canvas temporaire
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 400;
-        tempCanvas.height = 120;
-        const ctx = tempCanvas.getContext('2d');
-        ctx.drawImage(video, x, y, w, h, 0, 0, 400, 120);
+        // Canvas de capture
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, x, y, w, h, 0, 0, 400, 100);
 
-        // Afficher original
-        const origCtx = canvasOriginal.getContext('2d');
-        origCtx.drawImage(tempCanvas, 0, 0, 200, 80);
+        // Afficher preview
+        const pctx = preview.getContext('2d');
+        pctx.drawImage(canvas, 0, 0, 400, 100);
 
-        // Extraire les pixels ROUGES uniquement
-        let imgData = ctx.getImageData(0, 0, 400, 120);
+        // Extraire pixels rouges
+        let imgData = ctx.getImageData(0, 0, 400, 100);
         const data = imgData.data;
 
-        // Compter pixels rouges
-        let redPixelCount = 0;
         for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i+1];
             const b = data[i+2];
 
-            // LED rouge: R élevé, G et B bas
+            // Détecte LED rouge
             const isRed = r > 100 && g < 80 && b < 80;
             
-            if (isRed) {
-                redPixelCount++;
-                data[i] = 255;     // R = blanc
-                data[i+1] = 255;   // G
-                data[i+2] = 255;   // B
-            } else {
-                data[i] = 0;       // R = noir
-                data[i+1] = 0;     // G
-                data[i+2] = 0;     // B
-            }
-            data[i+3] = 255;
-        }
-
-        ctx.putImageData(imgData, 0, 0);
-
-        // Afficher extraction rouge
-        const redCtx = canvasRedOnly.getContext('2d');
-        redCtx.drawImage(tempCanvas, 0, 0, 200, 80);
-
-        // Binariser (noir/blanc strict)
-        imgData = ctx.getImageData(0, 0, 400, 120);
-        let whitePixels = 0;
-        for (let i = 0; i < data.length; i += 4) {
-            const val = data[i] > 128 ? 255 : 0;
+            const val = isRed ? 255 : 0;
             data[i] = data[i+1] = data[i+2] = val;
-            if (val > 128) whitePixels++;
         }
+
         ctx.putImageData(imgData, 0, 0);
 
-        // Afficher binarisé
-        const binCtx = canvasBinary.getContext('2d');
-        binCtx.drawImage(tempCanvas, 0, 0, 200, 80);
-
-        // Morphologie: dilate pour remplir trous
-        const dilated = dilate(imgData, 2);
-        ctx.putImageData(dilated, 0, 0);
-
-        // Afficher nettoyé
-        const cleanCtx = canvasCleaned.getContext('2d');
-        cleanCtx.drawImage(tempCanvas, 0, 0, 200, 80);
-
-        // Analyser: diviser en 8 colonnes (max 8 chiffres)
-        const data2 = dilated.data;
+        // Analyser densité par colonne (4 chiffres max)
+        const data2 = imgData.data;
         let result = '';
-        const colWidth = 400 / 8;
+        const colWidth = 400 / 4;
 
-        for (let col = 0; col < 8; col++) {
+        for (let col = 0; col < 4; col++) {
             const x1 = Math.floor(col * colWidth);
             const x2 = Math.floor((col + 1) * colWidth);
 
             let whiteCount = 0;
             let totalCount = 0;
 
-            for (let y = 0; y < 120; y++) {
+            for (let y = 0; y < 100; y++) {
                 for (let x = x1; x < x2; x++) {
                     const idx = (y * 400 + x) * 4;
                     if (data2[idx] > 128) whiteCount++;
@@ -292,74 +331,23 @@
             const density = whiteCount / totalCount;
 
             if (density > 0.02) {
-                // Il y a quelque chose
-                if (density < 0.08) {
-                    result += '1';
-                } else if (density < 0.12) {
-                    result += '7';
-                } else if (density < 0.20) {
-                    result += '4';
-                } else if (density < 0.30) {
-                    result += '0';
-                } else if (density < 0.40) {
-                    result += '6';
-                } else if (density < 0.50) {
-                    result += '9';
-                } else {
-                    result += '8';
-                }
+                if (density < 0.08) result += '1';
+                else if (density < 0.12) result += '7';
+                else if (density < 0.20) result += '4';
+                else if (density < 0.30) result += '0';
+                else if (density < 0.40) result += '6';
+                else if (density < 0.50) result += '9';
+                else result += '8';
             }
         }
 
-        // Nettoyer résultat
         result = result.replace(/[^0-9]/g, '');
 
-        const redDensity = (redPixelCount / (400 * 120) * 100).toFixed(1);
-        const whiteDensity = (whitePixels / (400 * 120) * 100).toFixed(1);
-
-        info.innerText = `Pixels rouges: ${redDensity}%\nPixels blancs: ${whiteDensity}%\nRésultat: "${result}"\nDensités: ${Array.from(result).map((_, i) => {
-            const x1 = Math.floor(i * 50);
-            const x2 = Math.floor((i + 1) * 50);
-            let count = 0;
-            for (let y = 0; y < 120; y++) {
-                for (let x = x1; x < x2; x++) {
-                    const idx = (y * 400 + x) * 4;
-                    if (data2[idx] > 128) count++;
-                }
-            }
-            return (count / (50 * 120) * 100).toFixed(0) + '%';
-        }).join(', ')}`;
-
-        scanBtn.disabled = false;
-        return result;
-    }
-
-    function dilate(imageData, kernel) {
-        const data = imageData.data;
-        const w = 400, h = 120;
-        const temp = new Uint8ClampedArray(data);
-
-        for (let y = kernel; y < h - kernel; y++) {
-            for (let x = kernel; x < w - kernel; x++) {
-                let maxVal = 0;
-                for (let dy = -kernel; dy <= kernel; dy++) {
-                    for (let dx = -kernel; dx <= kernel; dx++) {
-                        maxVal = Math.max(maxVal, temp[((y + dy) * w + (x + dx)) * 4]);
-                    }
-                }
-                const idx = (y * w + x) * 4;
-                data[idx] = data[idx+1] = data[idx+2] = maxVal;
-            }
-        }
-        return imageData;
-    }
-
-    scanBtn.addEventListener('click', () => {
-        const result = extractRedAndAnalyze();
-        
         if (!result) {
             weight.innerText = '----';
             weight.style.color = '#ff0000';
+            info.innerText = '✗ Pas de chiffre détecté';
+            scanBtn.disabled = false;
             return;
         }
 
@@ -370,14 +358,16 @@
             lastText = result;
         }
 
-        weight.innerText = result || '----';
+        weight.innerText = result;
         weight.style.color = stability >= 3 ? '#00ff00' : '#ff8888';
 
-        info.innerText += `\n\nStabilité: ${stability}/3`;
+        info.innerText = `Résultat: "${result}" | Stabilité: ${stability}/3`;
         if (stability >= 3) {
             locked = result;
             info.innerText += '\n✓ VERROUILLÉ';
         }
+
+        scanBtn.disabled = false;
     });
 
     resetBtn.addEventListener('click', () => {
@@ -386,8 +376,10 @@
         lastText = null;
         weight.innerText = '----';
         weight.style.color = '#ff0000';
-        info.innerText = '✓ Réinitialisé';
+        info.innerText = 'Réinitialisé';
     });
+
+    updateGuide();
 </script>
 </body>
 </html>
