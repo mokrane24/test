@@ -2,177 +2,150 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Scanner Balance PRO (Stable)</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Scanner Balance PRO (Stable & Manuel)</title>
 <style>
-body { background:#000; color:#fff; text-align:center; font-family:monospace; }
-video { width:100%; height:50vh; }
-#weight { font-size:4rem; margin:20px; }
-.roi { position:absolute; border:3px solid red; top:30%; left:20%; width:60%; height:15%; }
+    body { background:#000; color:#fff; text-align:center; font-family:sans-serif; margin:0; }
+    .camera-container { position:relative; width:100%; height:45vh; background:#111; overflow:hidden; }
+    video { width:100%; height:100%; object-fit:cover; }
+    .roi { position:absolute; border:2px solid #0f0; top:35%; left:15%; width:70%; height:20%; box-shadow: 0 0 10px #0f0; pointer-events:none; }
+    
+    .live-area { background:#1a1a1a; padding:10px; border-bottom:1px solid #333; }
+    #canvas { width:200px; height:60px; border:1px solid #555; background:#000; }
+    
+    .result-area { padding:20px; }
+    #weight-input { 
+        background:transparent; border:none; color:#0f0; font-size:4rem; 
+        width:100%; text-align:center; font-family:monospace; font-weight:bold;
+    }
+    
+    button { 
+        padding:15px 30px; font-size:1.1rem; font-weight:bold; border-radius:8px; 
+        border:none; cursor:pointer; margin:5px;
+    }
+    .btn-lock { background:#0f0; color:#000; width:80%; }
+    .btn-reset { background:#444; color:#fff; }
 </style>
 </head>
-
 <body>
 
-<div style="position:relative">
-<video id="video" autoplay playsinline></video>
-<div class="roi"></div>
+<div class="camera-container">
+    <video id="video" autoplay playsinline></video>
+    <div class="roi"></div>
 </div>
 
-<div id="weight">----</div>
-<button onclick="start()">START</button>
+<div class="live-area">
+    <canvas id="canvas" width="400" height="120"></canvas>
+    <div id="live-status" style="font-size:0.8rem; color:#888; margin-top:5px;">ANALYSE EN COURS...</div>
+</div>
 
-<canvas id="canvas" width="400" height="120"></canvas>
+<div class="result-area">
+    <input type="text" id="weight-input" value="----" inputmode="decimal">
+    <br>
+    <button class="btn-lock" id="btn-lock">VALIDER LE CHIFFRE</button>
+    <br>
+    <button class="btn-reset" onclick="location.reload()">RÉINITIALISER</button>
+</div>
 
 <script>
-
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const weight = document.getElementById('weight');
+const weightInput = document.getElementById('weight-input');
+const lockBtn = document.getElementById('btn-lock');
+const liveStatus = document.getElementById('live-status');
+
+let currentDetectedValue = "";
+let isScanning = true;
 
 navigator.mediaDevices.getUserMedia({ video: { facingMode:"environment" } })
-.then(stream => video.srcObject = stream);
+    .then(stream => video.srcObject = stream);
 
-// =======================
-// PREPROCESSING ROBUSTE
-// =======================
 function preprocess(imgData) {
     const d = imgData.data;
-
-    for (let i=0;i<d.length;i+=4){
+    for (let i=0; i<d.length; i+=4){
         let gray = 0.3*d[i] + 0.59*d[i+1] + 0.11*d[i+2];
-
-        // threshold dynamique
-        let val = gray > 100 ? 255 : 0;
-
+        let val = gray > 110 ? 255 : 0; // Seuil segments brillants
         d[i]=d[i+1]=d[i+2]=val;
     }
-
     return imgData;
 }
 
-// =======================
-// SEGMENT DETECTION
-// =======================
 function detectDigit(block) {
-
     const w = block.width;
     const h = block.height;
     const data = block.data;
 
-    function count(x1,y1,x2,y2){
-        let c=0,t=0;
-        for(let y=y1;y<y2;y++){
-            for(let x=x1;x<x2;x++){
-                const i=(y*w+x)*4;
-                if(data[i]>128) c++;
+    function count(x1, y1, x2, y2){
+        let c=0, t=0;
+        for(let y=Math.floor(y1); y<Math.floor(y2); y++){
+            for(let x=Math.floor(x1); x<Math.floor(x2); x++){
+                const i = (y * w + x) * 4;
+                if(data[i] > 128) c++;
                 t++;
             }
         }
         return c/t;
     }
 
+    // Mapping des segments amélioré (Positions relatives)
     const seg = [
-        count(w*0.2,h*0.05,w*0.8,h*0.15), // top
-        count(w*0.8,h*0.2,w*0.9,h*0.5),   // top-right
-        count(w*0.8,h*0.5,w*0.9,h*0.8),   // bottom-right
-        count(w*0.2,h*0.85,w*0.8,h*0.95), // bottom
-        count(w*0.1,h*0.5,w*0.2,h*0.8),   // bottom-left
-        count(w*0.1,h*0.2,w*0.2,h*0.5),   // top-left
-        count(w*0.2,h*0.45,w*0.8,h*0.55)  // middle
-    ].map(v=>v>0.2?1:0);
+        count(w*0.3, h*0.1, w*0.7, h*0.2),  // 0: top
+        count(w*0.75, h*0.2, w*0.9, h*0.45),// 1: top-right
+        count(w*0.75, h*0.55, w*0.9, h*0.8),// 2: bottom-right
+        count(w*0.3, h*0.8, w*0.7, h*0.9),  // 3: bottom
+        count(w*0.1, h*0.55, w*0.25, h*0.8),// 4: bottom-left
+        count(w*0.1, h*0.2, w*0.25, h*0.45),// 5: top-left
+        count(w*0.3, h*0.45, w*0.7, h*0.55) // 6: middle
+    ].map(v => v > 0.25 ? 1 : 0);
 
     const map = {
-        "1110111":"0",
-        "0010010":"1",
-        "1011101":"2",
-        "1011011":"3",
-        "0111010":"4",
-        "1101011":"5",
-        "1101111":"6",
-        "1010010":"7",
-        "1111111":"8",
-        "1111011":"9"
+        "1111110":"0", "0110000":"1", "1101101":"2", "1111001":"3", "0110011":"4",
+        "1011011":"5", "1011111":"6", "1110000":"7", "1111111":"8", "1111011":"9"
     };
-
     return map[seg.join("")] || "";
 }
 
-// =======================
-// LECTURE COMPLETE
-// =======================
-function readDigits(imgData) {
+async function loop(){
+    if(!isScanning) return;
 
-    const w = 400;
-    const h = 120;
-    const digitWidth = w / 4;
-
-    let result = "";
-
-    for (let i=0;i<4;i++){
-        const x = i * digitWidth;
-
-        const block = ctx.getImageData(x,0,digitWidth,h);
-        result += detectDigit(block);
-    }
-
-    return result;
-}
-
-// =======================
-// STABILISATION
-// =======================
-let hist=[];
-
-function stabilize(val){
-    if(!val) return null;
-    hist.push(val);
-    if(hist.length>5) hist.shift();
-
-    const count={};
-    hist.forEach(v=>count[v]=(count[v]||0)+1);
-
-    let best=null,max=0;
-    for(let k in count){
-        if(count[k]>max){best=k;max=count[k];}
-    }
-
-    return max>=3?best:null;
-}
-
-// =======================
-// LOOP
-// =======================
-async function start(){
-
-    while(true){
-
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-
-        ctx.drawImage(video, vw*0.2, vh*0.3, vw*0.6, vh*0.15, 0,0,400,120);
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if(vw > 0) {
+        // Zone ROI : centre de l'écran
+        ctx.drawImage(video, vw*0.15, vh*0.35, vw*0.7, vh*0.2, 0, 0, 400, 120);
 
         let img = ctx.getImageData(0,0,400,120);
         img = preprocess(img);
         ctx.putImageData(img,0,0);
 
-        const txt = readDigits(img);
-        const stable = stabilize(txt);
-
-        if(stable){
-            weight.innerText = stable;
-            weight.style.color = "lime";
-        }else{
-            weight.innerText = txt || "----";
-            weight.style.color = "orange";
+        let result = "";
+        const digitWidth = 400 / 4; // Supposons 4 chiffres
+        for (let i=0; i<4; i++){
+            const block = ctx.getImageData(i*digitWidth, 0, digitWidth, 120);
+            result += detectDigit(block);
         }
 
-        await new Promise(r=>setTimeout(r,200));
+        if(result.length > 0) {
+            currentDetectedValue = result;
+            liveStatus.innerText = "VU : " + result;
+            liveStatus.style.color = "#0f0";
+        }
     }
+    setTimeout(loop, 150);
 }
 
-</script>
+// Bloquer la valeur
+lockBtn.onclick = () => {
+    if(currentDetectedValue) {
+        weightInput.value = currentDetectedValue;
+        weightInput.style.backgroundColor = "rgba(0,255,0,0.1)";
+        setTimeout(() => weightInput.style.backgroundColor = "transparent", 300);
+    }
+};
 
+video.onplay = loop;
+
+</script>
 </body>
 </html>
