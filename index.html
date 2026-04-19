@@ -2,16 +2,13 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Scanner Balance PRO++</title>
-
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<title>Scanner Balance PRO (Stable)</title>
 
 <style>
-body { margin:0; background:#000; color:#fff; font-family:monospace; }
-#video { width:100%; height:50vh; }
-#weight { font-size:4rem; text-align:center; margin:20px; }
+body { background:#000; color:#fff; text-align:center; font-family:monospace; }
+video { width:100%; height:50vh; }
+#weight { font-size:4rem; margin:20px; }
 .roi { position:absolute; border:3px solid red; top:30%; left:20%; width:60%; height:15%; }
-button { padding:15px; font-size:16px; }
 </style>
 </head>
 
@@ -23,7 +20,7 @@ button { padding:15px; font-size:16px; }
 </div>
 
 <div id="weight">----</div>
-<button onclick="startScan()">SCAN AUTO</button>
+<button onclick="start()">START</button>
 
 <canvas id="canvas" width="400" height="120"></canvas>
 
@@ -34,122 +31,144 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const weight = document.getElementById('weight');
 
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+navigator.mediaDevices.getUserMedia({ video: { facingMode:"environment" } })
 .then(stream => video.srcObject = stream);
 
 // =======================
-// PREPROCESSING PRO
+// PREPROCESSING ROBUSTE
 // =======================
 function preprocess(imgData) {
     const d = imgData.data;
 
-    // grayscale + contrast
-    for (let i = 0; i < d.length; i += 4) {
-        const gray = 0.3*d[i] + 0.59*d[i+1] + 0.11*d[i+2];
+    for (let i=0;i<d.length;i+=4){
+        let gray = 0.3*d[i] + 0.59*d[i+1] + 0.11*d[i+2];
 
-        // contraste boost
-        let val = gray > 120 ? 255 : 0;
+        // threshold dynamique
+        let val = gray > 100 ? 255 : 0;
 
-        d[i] = d[i+1] = d[i+2] = val;
+        d[i]=d[i+1]=d[i+2]=val;
     }
 
     return imgData;
 }
 
 // =======================
-// UPSCALE
+// SEGMENT DETECTION
 // =======================
-function upscale(source) {
-    const big = document.createElement('canvas');
-    big.width = source.width * 3;
-    big.height = source.height * 3;
+function detectDigit(block) {
 
-    const bctx = big.getContext('2d');
-    bctx.imageSmoothingEnabled = false;
-    bctx.drawImage(source, 0, 0, big.width, big.height);
+    const w = block.width;
+    const h = block.height;
+    const data = block.data;
 
-    return big;
+    function count(x1,y1,x2,y2){
+        let c=0,t=0;
+        for(let y=y1;y<y2;y++){
+            for(let x=x1;x<x2;x++){
+                const i=(y*w+x)*4;
+                if(data[i]>128) c++;
+                t++;
+            }
+        }
+        return c/t;
+    }
+
+    const seg = [
+        count(w*0.2,h*0.05,w*0.8,h*0.15), // top
+        count(w*0.8,h*0.2,w*0.9,h*0.5),   // top-right
+        count(w*0.8,h*0.5,w*0.9,h*0.8),   // bottom-right
+        count(w*0.2,h*0.85,w*0.8,h*0.95), // bottom
+        count(w*0.1,h*0.5,w*0.2,h*0.8),   // bottom-left
+        count(w*0.1,h*0.2,w*0.2,h*0.5),   // top-left
+        count(w*0.2,h*0.45,w*0.8,h*0.55)  // middle
+    ].map(v=>v>0.2?1:0);
+
+    const map = {
+        "1110111":"0",
+        "0010010":"1",
+        "1011101":"2",
+        "1011011":"3",
+        "0111010":"4",
+        "1101011":"5",
+        "1101111":"6",
+        "1010010":"7",
+        "1111111":"8",
+        "1111011":"9"
+    };
+
+    return map[seg.join("")] || "";
 }
 
 // =======================
-// OCR
+// LECTURE COMPLETE
 // =======================
-async function read(canvas) {
-    const res = await Tesseract.recognize(canvas, 'eng', {
-        tessedit_char_whitelist: '0123456789',
-        tessedit_pageseg_mode: 7
-    });
+function readDigits(imgData) {
 
-    return res.data.text.replace(/\D/g, '');
+    const w = 400;
+    const h = 120;
+    const digitWidth = w / 4;
+
+    let result = "";
+
+    for (let i=0;i<4;i++){
+        const x = i * digitWidth;
+
+        const block = ctx.getImageData(x,0,digitWidth,h);
+        result += detectDigit(block);
+    }
+
+    return result;
 }
 
 // =======================
 // STABILISATION
 // =======================
-let history = [];
+let hist=[];
 
-function stabilize(value) {
-    if (!value) return null;
+function stabilize(val){
+    if(!val) return null;
+    hist.push(val);
+    if(hist.length>5) hist.shift();
 
-    history.push(value);
-    if (history.length > 5) history.shift();
+    const count={};
+    hist.forEach(v=>count[v]=(count[v]||0)+1);
 
-    const counts = {};
-    history.forEach(v => counts[v] = (counts[v]||0)+1);
+    let best=null,max=0;
+    for(let k in count){
+        if(count[k]>max){best=k;max=count[k];}
+    }
 
-    let best = null, max = 0;
-    for (let k in counts) {
-        if (counts[k] > max) {
-            best = k;
-            max = counts[k];
+    return max>=3?best:null;
+}
+
+// =======================
+// LOOP
+// =======================
+async function start(){
+
+    while(true){
+
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+
+        ctx.drawImage(video, vw*0.2, vh*0.3, vw*0.6, vh*0.15, 0,0,400,120);
+
+        let img = ctx.getImageData(0,0,400,120);
+        img = preprocess(img);
+        ctx.putImageData(img,0,0);
+
+        const txt = readDigits(img);
+        const stable = stabilize(txt);
+
+        if(stable){
+            weight.innerText = stable;
+            weight.style.color = "lime";
+        }else{
+            weight.innerText = txt || "----";
+            weight.style.color = "orange";
         }
-    }
 
-    return max >= 3 ? best : null;
-}
-
-// =======================
-// SCAN LOOP
-// =======================
-let scanning = false;
-
-async function startScan() {
-    scanning = true;
-
-    while (scanning) {
-        await scanOnce();
-        await new Promise(r => setTimeout(r, 300)); // vitesse scan
-    }
-}
-
-async function scanOnce() {
-
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-
-    const x = vw * 0.2;
-    const y = vh * 0.3;
-    const w = vw * 0.6;
-    const h = vh * 0.15;
-
-    ctx.drawImage(video, x, y, w, h, 0, 0, 400, 120);
-
-    let imgData = ctx.getImageData(0, 0, 400, 120);
-    imgData = preprocess(imgData);
-    ctx.putImageData(imgData, 0, 0);
-
-    const big = upscale(canvas);
-
-    const text = await read(big);
-
-    const stable = stabilize(text);
-
-    if (stable) {
-        weight.innerText = stable;
-        weight.style.color = "lime";
-    } else {
-        weight.innerText = text || "----";
-        weight.style.color = "orange";
+        await new Promise(r=>setTimeout(r,200));
     }
 }
 
