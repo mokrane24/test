@@ -3,426 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance LED Rouge</title>
+    <title>Scanner Balance Simple</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        * { box-sizing: border-box; user-select: none; }
-        body { margin: 0; background: #000; color: #fff; font-family: monospace; overflow: hidden; }
-        
-        .container { display: flex; flex-direction: column; height: 100vh; }
-        
-        .video-section {
-            position: relative;
-            flex: 1;
-            background: #000;
-        }
-        
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .guide-box {
-            position: absolute;
-            top: 25%;
-            left: 10%;
-            width: 80%;
-            height: 25%;
-            border: 3px solid #ff6666;
-            border-radius: 10px;
-            box-shadow: 0 0 20px #ff6666;
-            z-index: 5;
-            pointer-events: none;
-        }
-        
-        .guide-box::after {
-            content: "CADREZ LES CHIFFRES";
-            position: absolute;
-            top: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #ff6666;
-            color: #fff;
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        
-        .control-section {
-            background: #0a0a0a;
-            padding: 20px;
-            border-top: 2px solid #ff6666;
-            max-height: 45vh;
-            overflow-y: auto;
-        }
-        
-        .result-box {
-            background: #1a1a1a;
-            border: 2px solid #ff6666;
-            border-radius: 10px;
-            padding: 15px;
-            text-align: center;
-            margin-bottom: 15px;
-        }
-        
-        #weight {
-            font-size: 5rem;
-            font-weight: bold;
-            color: #ff6666;
-            text-shadow: 0 0 20px #ff6666;
-            letter-spacing: 6px;
-            font-family: monospace;
-            min-height: 70px;
-        }
-        
-        #status {
-            font-size: 12px;
-            color: #666;
-            margin-top: 10px;
-        }
-        
-        .info-box {
-            background: #1a1a1a;
-            border-left: 3px solid #ff6666;
-            padding: 10px;
-            margin-bottom: 10px;
-            font-size: 11px;
-            color: #ff6666;
-        }
-        
-        button {
-            padding: 10px 20px;
-            background: #ff6666;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-right: 10px;
-            margin-bottom: 10px;
-        }
-        
-        button:hover {
-            background: #ff8888;
-        }
-        
-        .edit-zone {
-            background: #1a1a1a;
-            border-left: 3px solid #ffaa00;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            display: none;
-        }
-        
-        .edit-zone.active {
-            display: block;
-        }
-        
-        .edit-input {
-            width: 100%;
-            padding: 10px;
-            background: #000;
-            border: 2px solid #ffaa00;
-            color: #ffaa00;
-            font-size: 2rem;
-            font-weight: bold;
-            text-align: center;
-            font-family: monospace;
-            border-radius: 6px;
-            margin: 10px 0;
-        }
-        
-        .button-row {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .button-row button {
-            flex: 1;
-            margin: 0;
-        }
-        
-        .btn-ok { background: #00ff00; color: #000; }
-        .btn-ok:hover { background: #33ff33; }
-        .btn-cancel { background: #ff6666; }
-        .btn-cancel:hover { background: #ff8888; }
-        
-        canvas {
-            width: 100%;
-            border: 1px solid #333;
-            margin: 10px 0;
-            background: #000;
-        }
+        body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; }
+        #video { width: 100%; height: 60vh; display: block; }
+        .controls { background: #000; padding: 20px; text-align: center; }
+        #weight { font-size: 5rem; font-weight: bold; color: #0f0; margin: 20px 0; }
+        button { padding: 15px 30px; font-size: 18px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; margin: 10px; }
+        button:hover { background: #0a0; }
+        canvas { width: 100%; margin: 20px 0; border: 1px solid #333; }
+        #info { color: #666; margin-top: 10px; font-size: 12px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="video-section">
-        <video id="video" autoplay playsinline muted></video>
-        <div class="guide-box"></div>
-    </div>
+<video id="video" autoplay playsinline muted></video>
 
-    <div class="control-section">
-        <div class="result-box">
-            <div id="weight">----</div>
-            <div id="status">Initialisation...</div>
-        </div>
-
-        <div class="edit-zone" id="edit-zone">
-            <div style="color: #ffaa00; margin-bottom: 8px; font-weight: bold;">✏️ CORRIGER :</div>
-            <input type="text" id="edit-input" class="edit-input" placeholder="Poids">
-            <div class="button-row">
-                <button class="btn-ok" id="btn-ok">✓ OK</button>
-                <button class="btn-cancel" id="btn-cancel">✗ ANNULER</button>
-            </div>
-        </div>
-
-        <div class="info-box">
-            <strong>MODE DÉTECTION LED ROUGE</strong><br>
-            Analyse directe sans OCR<br>
-            Meilleur pour affichages LED 7-segments
-        </div>
-
-        <canvas id="preview" width="400" height="80"></canvas>
-
-        <div class="info-box">
-            <div id="debug">Prêt</div>
-        </div>
-
-        <button id="btn-reset">🔄 RÉINITIALISER</button>
-        <button id="btn-scan">📷 SCANNER</button>
-    </div>
+<div class="controls">
+    <button id="scan">SCANNER</button>
+    <div id="weight">----</div>
+    <canvas id="preview" width="400" height="100"></canvas>
+    <div id="info">Prêt</div>
 </div>
 
 <script>
-    class LEDScanner {
-        constructor() {
-            this.video = document.getElementById('video');
-            this.canvas = document.createElement('canvas');
-            this.preview = document.getElementById('preview');
-            this.previewCtx = this.preview.getContext('2d');
-            this.weight = document.getElementById('weight');
-            this.status = document.getElementById('status');
-            this.debug = document.getElementById('debug');
-            this.editZone = document.getElementById('edit-zone');
-            this.editInput = document.getElementById('edit-input');
-            
-            this.locked = null;
-            this.stability = 0;
-            this.lastValue = null;
-            
-            this.setupEvents();
-            this.startCamera();
+    const video = document.getElementById('video');
+    const scanBtn = document.getElementById('scan');
+    const weight = document.getElementById('weight');
+    const preview = document.getElementById('preview');
+    const info = document.getElementById('info');
+
+    let locked = null;
+    let stability = 0;
+    let lastText = null;
+
+    // Caméra
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(stream => video.srcObject = stream)
+        .catch(err => info.innerText = 'Erreur caméra: ' + err.message);
+
+    scanBtn.addEventListener('click', async () => {
+        if (video.videoWidth === 0) {
+            info.innerText = 'Vidéo non prête';
+            return;
         }
 
-        setupEvents() {
-            document.getElementById('btn-reset').addEventListener('click', () => this.reset());
-            document.getElementById('btn-scan').addEventListener('click', () => this.scan());
-            document.getElementById('btn-ok').addEventListener('click', () => this.validate());
-            document.getElementById('btn-cancel').addEventListener('click', () => {
-                this.editZone.classList.remove('active');
-                this.stability = 0;
+        scanBtn.disabled = true;
+        info.innerText = 'Scan en cours...';
+
+        // Capturer région du centre (où sont les chiffres)
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        const x = Math.floor(w * 0.1);
+        const y = Math.floor(h * 0.25);
+        const cw = Math.floor(w * 0.8);
+        const ch = Math.floor(h * 0.25);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 600;
+        canvas.height = 150;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, x, y, cw, ch, 0, 0, 600, 150);
+
+        // Afficher l'image capturée
+        const pctx = preview.getContext('2d');
+        pctx.drawImage(canvas, 0, 0, preview.width, preview.height);
+
+        try {
+            // OCR SIMPLE - SANS PREPROCESSING
+            const result = await Tesseract.recognize(canvas, 'eng', {
+                tessedit_char_whitelist: '0123456789.',
+                tessedit_pageseg_mode: '7'
             });
-        }
 
-        async startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-                });
-                this.video.srcObject = stream;
-                this.status.innerText = '✓ Caméra prête';
-            } catch(e) {
-                this.status.innerText = '✗ Erreur caméra';
-                this.debug.innerText = e.message;
-            }
-        }
-
-        async scan() {
-            if (this.video.videoWidth === 0) {
-                this.status.innerText = 'Vidéo non prête';
+            let text = result.data.text.trim();
+            
+            // Juste enlever les caractères nuls
+            text = text.replace(/[^0-9.]/g, '');
+            
+            if (!text) {
+                info.innerText = 'Aucun texte détecté';
+                scanBtn.disabled = false;
                 return;
             }
 
-            this.status.innerText = '⏳ Scan...';
-
-            // Capturer la région avec les chiffres
-            const w = this.video.videoWidth;
-            const h = this.video.videoHeight;
-            
-            const roiX = Math.floor(w * 0.1);
-            const roiY = Math.floor(h * 0.25);
-            const roiW = Math.floor(w * 0.8);
-            const roiH = Math.floor(h * 0.25);
-
-            this.canvas.width = roiW;
-            this.canvas.height = roiH;
-            const ctx = this.canvas.getContext('2d');
-            ctx.drawImage(this.video, roiX, roiY, roiW, roiH, 0, 0, roiW, roiH);
-
-            // Traiter pour trouver les LED rouges
-            const result = this.detectRedLEDs(ctx);
-
-            // Afficher preview
-            this.previewCtx.drawImage(this.canvas, 0, 0, this.preview.width, this.preview.height);
-
-            if (result.text && result.confidence > 0.3) {
-                if (this.lastValue === result.text) {
-                    this.stability++;
-                } else {
-                    this.stability = 1;
-                    this.lastValue = result.text;
-                }
-
-                this.weight.innerText = result.text;
-                this.debug.innerText = `Détecté: "${result.text}" | Conf: ${result.confidence.toFixed(2)} | Stab: ${this.stability}/3`;
-
-                if (this.stability >= 3) {
-                    if (this.locked !== result.text) {
-                        this.locked = result.text;
-                        this.weight.style.color = '#00ff00';
-                        this.status.innerText = '🔒 VERROUILLÉ';
-
-                        // Afficher édition
-                        this.editInput.value = result.text;
-                        this.editZone.classList.add('active');
-                        this.editInput.focus();
-                        this.editInput.select();
-                    }
-                } else {
-                    this.weight.style.color = '#ff6666';
-                    this.status.innerText = `🔄 Stabilité ${this.stability}/3`;
-                }
+            // Stabilité
+            if (lastText === text) {
+                stability++;
             } else {
-                this.stability = 0;
-                this.weight.innerText = '----';
-                this.weight.style.color = '#ff6666';
-                this.status.innerText = '✗ Pas détecté';
-                this.debug.innerText = `Aucune LED détectée (conf: ${result.confidence.toFixed(2)})`;
+                stability = 1;
+                lastText = text;
             }
+
+            weight.innerText = text;
+            info.innerText = `Résultat: "${text}" | Confiance: ${(result.data.confidence * 100).toFixed(0)}% | Stabilité: ${stability}/3`;
+
+            if (stability >= 3) {
+                weight.style.color = '#0f0';
+                locked = text;
+                info.innerText = '✓ VERROUILLÉ: ' + text;
+            } else {
+                weight.style.color = '#ff0';
+            }
+
+        } catch(e) {
+            info.innerText = 'Erreur OCR: ' + e.message;
         }
 
-        detectRedLEDs(ctx) {
-            const imgData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-            const data = imgData.data;
-
-            // Chercher les pixels rouges (LED rouge)
-            let redPixels = 0;
-            let totalPixels = data.length / 4;
-            let processedData = new Uint8ClampedArray(data.length);
-
-            for (let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i+1];
-                const b = data[i+2];
-
-                // Détecte LED rouge: R > 100, G < 50, B < 50
-                const isRed = r > 80 && g < 80 && b < 80 && r > g && r > b;
-
-                if (isRed) {
-                    processedData[i] = processedData[i+1] = processedData[i+2] = 0;
-                    redPixels++;
-                } else {
-                    processedData[i] = processedData[i+1] = processedData[i+2] = 255;
-                }
-                processedData[i+3] = 255;
-            }
-
-            ctx.putImageData(new ImageData(processedData, ctx.canvas.width, ctx.canvas.height), 0, 0);
-
-            // Calculer confiance
-            const confidence = redPixels / totalPixels;
-
-            // Extraire les bounding boxes des LED rouges
-            const digits = this.extractDigits(processedData, ctx.canvas.width, ctx.canvas.height);
-
-            return {
-                text: digits,
-                confidence: confidence,
-                pixels: redPixels
-            };
-        }
-
-        extractDigits(data, width, height) {
-            // Diviser l'image en 8 zones (pour max 8 chiffres)
-            const digitWidth = width / 8;
-            let result = '';
-
-            for (let d = 0; d < 8; d++) {
-                const x1 = Math.floor(d * digitWidth);
-                const x2 = Math.floor((d + 1) * digitWidth);
-                
-                let darkPixels = 0;
-                let totalPixels = 0;
-
-                for (let y = 0; y < height; y++) {
-                    for (let x = x1; x < x2; x++) {
-                        const idx = (y * width + x) * 4;
-                        if (data[idx] < 128) darkPixels++;
-                        totalPixels++;
-                    }
-                }
-
-                const density = darkPixels / totalPixels;
-
-                if (density > 0.05) {
-                    // Il y a quelque chose à cet endroit
-                    if (density < 0.1) result += '1';
-                    else if (density < 0.2) result += '7';
-                    else if (density < 0.3) result += '4';
-                    else if (density < 0.4) result += '0';
-                    else if (density < 0.5) result += '6';
-                    else if (density < 0.6) result += '9';
-                    else result += '8';
-                } else if (result.length > 0) {
-                    result += '.'; // Séparateur décimal
-                }
-            }
-
-            // Nettoyer résultat
-            result = result.replace(/\.+/g, '.').replace(/^\./, '').replace(/\.$/, '');
-            
-            // Garder max 1 décimal
-            if (result.includes('.')) {
-                const parts = result.split('.');
-                result = parts[0] + '.' + parts[1].substring(0, 2);
-            }
-
-            // Vérifier format valide
-            if (!/^[0-9]+(\.[0-9]{1,2})?$/.test(result)) {
-                return '';
-            }
-
-            return result;
-        }
-
-        validate() {
-            const val = this.editInput.value.trim();
-            if (val && /^[0-9]+(\.[0-9]{1,3})?$/.test(val)) {
-                this.locked = val;
-                this.weight.innerText = val;
-                this.weight.style.color = '#00ff00';
-                this.status.innerText = '✅ VALIDÉ';
-                this.editZone.classList.remove('active');
-            }
-        }
-
-        reset() {
-            this.locked = null;
-            this.stability = 0;
-            this.lastValue = null;
-            this.weight.innerText = '----';
-            this.weight.style.color = '#ff6666';
-            this.status.innerText = 'Réinitialisé';
-            this.editZone.classList.remove('active');
-        }
-    }
-
-    window.addEventListener('load', () => {
-        new LEDScanner();
+        scanBtn.disabled = false;
     });
 </script>
 </body>
