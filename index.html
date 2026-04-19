@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance Pro - Sans Erreur</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <title>Scanner Balance 7-Segments</title>
     <style>
         * {
             box-sizing: border-box;
@@ -60,6 +59,8 @@
             padding: 15px 20px;
             background: #0a0a0a;
             border-top: 1px solid #00ff00;
+            overflow-y: auto;
+            height: 45vh;
         }
         .weight-panel {
             background: #000;
@@ -77,6 +78,10 @@
             color: #00ff00;
             text-shadow: 0 0 5px #00ff00;
             word-break: break-word;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .unit {
             font-size: 0.9rem;
@@ -97,6 +102,7 @@
             border: 1px solid #333;
             border-radius: 8px;
             image-rendering: crisp-edges;
+            margin-bottom: 10px;
         }
         .info {
             font-size: 10px;
@@ -116,15 +122,47 @@
             cursor: pointer;
             color: #000;
         }
+        button:hover {
+            background: #00dd00;
+        }
         .flex-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
-        .locked-badge {
-            color: #00ff00;
-            font-size: 10px;
-            margin-left: 10px;
+        .debug-section {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 9px;
+        }
+        .edit-input {
+            width: 100%;
+            padding: 10px;
+            background: #000;
+            border: 2px solid #ffaa00;
+            color: #ffaa00;
+            font-family: monospace;
+            font-size: 1.5rem;
+            text-align: center;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .button-group button {
+            flex: 1;
+            margin: 0;
+        }
+        .btn-validate {
+            background: #00ff00;
+        }
+        .btn-cancel {
+            background: #ff6666;
         }
     </style>
 </head>
@@ -138,242 +176,305 @@
 <div class="controls">
     <div class="flex-row">
         <div id="status">🔴 DÉMARRAGE...</div>
-        <button id="resetBtn">🔄 RÉINITIALISER</button>
+        <button id="resetBtn">🔄 RESET</button>
     </div>
     <div class="weight-panel">
         <div id="weight">----</div>
         <div class="unit">KILOGRAMMES (kg)</div>
     </div>
+
+    <div class="edit-section" id="edit-section" style="display:none;">
+        <div style="color: #ffaa00; margin-bottom: 5px;">✏️ MODIFIER :</div>
+        <input type="text" id="edit-input" class="edit-input" placeholder="Entrez la valeur">
+        <div class="button-group">
+            <button class="btn-validate" id="btn-validate">✓ OK</button>
+            <button class="btn-cancel" id="btn-cancel">✗ ANNULER</button>
+        </div>
+    </div>
+
     <canvas id="debugCanvas" width="400" height="90" style="width:100%; height:auto;"></canvas>
+    
+    <div class="debug-section">
+        <div id="debug-info">Détection: --</div>
+    </div>
+
     <div class="info">
-        🎯 PLACEZ LES CHIFFRES DANS LE CADRE VERT → ATTENDEZ LE VERROUILLAGE AUTO
+        🎯 DÉTECTION AUTOMATIQUE 7-SEGMENTS (SANS OCR)
     </div>
 </div>
 
 <script>
     (function() {
-        // Éléments
         const video = document.getElementById('video');
         const debugCanvas = document.getElementById('debugCanvas');
         const ctx = debugCanvas.getContext('2d');
         const weightDisplay = document.getElementById('weight');
         const statusDiv = document.getElementById('status');
         const resetBtn = document.getElementById('resetBtn');
+        const debugInfo = document.getElementById('debug-info');
+        const editSection = document.getElementById('edit-section');
+        const editInput = document.getElementById('edit-input');
+        const btnValidate = document.getElementById('btn-validate');
+        const btnCancel = document.getElementById('btn-cancel');
 
-        // État
         let isRunning = true;
-        let lockedValue = null;           // Valeur verrouillée finale
-        let pendingValue = null;           // Valeur en cours de stabilisation
-        let stabilityCounter = 0;          // Compteur de stabilité
-        let lastRawValue = null;
-        
-        // Zone de capture (ROI) - ajustée pour capturer uniquement les chiffres
+        let lockedValue = null;
+        let stabilityCounter = 0;
+        let lastDetected = null;
         let roi = { x: 0.12, y: 0.38, width: 0.76, height: 0.20 };
-        
-        // ========== PRÉTRAITEMENT ULTRA SIMPLE MAIS EFFICACE ==========
+
+        // ============= PATTERNS 7-SEGMENTS =============
+        // Chaque chiffre = 7 segments (top, top-left, top-right, middle, bot-left, bot-right, bottom)
+        const PATTERNS = {
+            '0': [1,1,1,0,1,1,1],
+            '1': [0,0,1,0,0,1,0],
+            '2': [1,0,1,1,1,0,1],
+            '3': [1,0,1,1,0,1,1],
+            '4': [0,1,1,1,0,1,0],
+            '5': [1,1,0,1,0,1,1],
+            '6': [1,1,0,1,1,1,1],
+            '7': [1,0,1,0,0,1,0],
+            '8': [1,1,1,1,1,1,1],
+            '9': [1,1,1,1,0,1,1],
+            '.': [0,0,0,0,0,0,1],
+        };
+
+        // ============= PRÉTRAITEMENT =============
         function preprocessImage(ctx, width, height) {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
             
-            // 1. Convertir en niveaux de gris et calculer luminosité moyenne
+            // Grayscale et calcul moyenne
             let sum = 0;
             for (let i = 0; i < data.length; i += 4) {
-                const gray = (data[i] + data[i+1] + data[i+2]) / 3;
+                const gray = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
                 sum += gray;
             }
             const avg = sum / (data.length / 4);
             
-            // 2. Seuil adaptatif : on cherche les caractères (généralement plus clairs que le fond)
-            const threshold = avg + 25;
+            // Seuil adaptatif pour LED lumineux
+            const threshold = avg * 0.85;
             
-            // 3. Binarisation + inversion pour avoir texte noir sur fond blanc (optimal pour Tesseract)
+            // Binarisation
             for (let i = 0; i < data.length; i += 4) {
-                const gray = (data[i] + data[i+1] + data[i+2]) / 3;
-                // Si c'est plus clair que le seuil -> caractère (devient noir après inversion)
-                const isBright = gray > threshold;
-                // On veut du texte NOIR sur fond BLANC
-                const value = isBright ? 0 : 255;
-                data[i] = value;     // R
-                data[i+1] = value;   // G
-                data[i+2] = value;   // B
+                const gray = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
+                const value = (gray > threshold) ? 0 : 255;
+                data[i] = value;
+                data[i+1] = value;
+                data[i+2] = value;
             }
             
             ctx.putImageData(imgData, 0, 0);
         }
-        
-        // ========== NETTOYAGE DES RÉSULTATS OCR ==========
-        function cleanOCRResult(text) {
-            // Garder uniquement chiffres, points et virgules
-            let cleaned = text.replace(/[^0-9,.]/g, '');
-            // Remplacer virgule par point
-            cleaned = cleaned.replace(/,/g, '.');
-            // Extraire le premier nombre trouvé
-            const match = cleaned.match(/\d+(?:\.\d+)?/);
-            if (!match) return null;
+
+        // ============= DÉTECTION 7-SEGMENTS =============
+        function detectSegments(imageData, digitX, digitY, digitW, digitH) {
+            const data = imageData.data;
+            const w = imageData.width;
             
-            let number = match[0];
-            // Supprimer les zéros inutiles au début
-            number = number.replace(/^0+/, '');
-            if (number === '') number = '0';
-            
-            // Vérifier que c'est un poids plausible (0 à 80000 kg pour semi-remorque)
-            const val = parseFloat(number);
-            if (isNaN(val)) return null;
-            if (val >= 0 && val <= 90000) return number;
-            
-            return null;
+            // Définir les 7 zones de segments (en pourcentage du chiffre)
+            const segmentZones = {
+                top: { x: 0.2, y: 0.05, w: 0.6, h: 0.15 },
+                topLeft: { x: 0.05, y: 0.2, w: 0.2, h: 0.25 },
+                topRight: { x: 0.75, y: 0.2, w: 0.2, h: 0.25 },
+                middle: { x: 0.15, y: 0.45, w: 0.7, h: 0.1 },
+                botLeft: { x: 0.05, y: 0.6, w: 0.2, h: 0.25 },
+                botRight: { x: 0.75, y: 0.6, w: 0.2, h: 0.25 },
+                bottom: { x: 0.2, y: 0.8, w: 0.6, h: 0.15 },
+            };
+
+            const segments = {};
+            for (const [name, zone] of Object.entries(segmentZones)) {
+                const x1 = Math.floor(digitX + zone.x * digitW);
+                const y1 = Math.floor(digitY + zone.y * digitH);
+                const x2 = Math.floor(digitX + (zone.x + zone.w) * digitW);
+                const y2 = Math.floor(digitY + (zone.y + zone.h) * digitH);
+
+                let darkPixels = 0;
+                let totalPixels = 0;
+
+                for (let y = y1; y < y2 && y < imageData.height; y++) {
+                    for (let x = x1; x < x2 && x < w; x++) {
+                        const idx = (y * w + x) * 4;
+                        if (data[idx] < 128) darkPixels++;
+                        totalPixels++;
+                    }
+                }
+
+                segments[name] = (darkPixels / totalPixels) > 0.3 ? 1 : 0;
+            }
+
+            return [segments.top, segments.topLeft, segments.topRight, segments.middle, 
+                    segments.botLeft, segments.botRight, segments.bottom];
         }
-        
-        // ========== CAPTURE + OCR ==========
+
+        // ============= RECONNAISSANCE CHIFFRE =============
+        function recognizeDigit(pattern) {
+            let bestMatch = '?';
+            let bestScore = 0;
+
+            for (const [digit, digitPattern] of Object.entries(PATTERNS)) {
+                let score = 0;
+                for (let i = 0; i < 7; i++) {
+                    if (pattern[i] === digitPattern[i]) score++;
+                }
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = digit;
+                }
+            }
+
+            return { digit: bestMatch, confidence: bestScore / 7 };
+        }
+
+        // ============= DÉTECTION NOMBRE COMPLET =============
         async function captureAndRead() {
             if (!isRunning) return;
-            if (!video.videoWidth || video.videoHeight === 0) {
+            if (video.videoWidth === 0) {
                 requestAnimationFrame(() => setTimeout(captureAndRead, 150));
                 return;
             }
-            
-            // Calculer la zone d'intérêt
+
             const vw = video.videoWidth;
             const vh = video.videoHeight;
             const roiX = Math.floor(vw * roi.x);
             const roiY = Math.floor(vh * roi.y);
             const roiW = Math.floor(vw * roi.width);
             const roiH = Math.floor(vh * roi.height);
-            
-            if (roiW < 40 || roiH < 20) {
-                setTimeout(captureAndRead, 200);
-                return;
-            }
-            
-            // Capturer la zone sur un canvas temporaire
+
+            // Capturer et prétraiter
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = 400;
             tempCanvas.height = 90;
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, 400, 90);
             
-            // Prétraiter
             preprocessImage(tempCtx, 400, 90);
-            
-            // Afficher dans le debug
-            ctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+
+            // Afficher dans debug
             ctx.drawImage(tempCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
+
+            // Détection des segments
+            const imageData = tempCtx.getImageData(0, 0, 400, 90);
             
-            // Lancer OCR
-            try {
-                const result = await Tesseract.recognize(
-                    tempCanvas,
-                    'eng',
-                    {
-                        tessedit_char_whitelist: '0123456789.,',
-                        tessedit_pageseg_mode: '7',      // Une seule ligne
-                        tessedit_ocr_engine_mode: '1'     // LSTM uniquement
-                    }
-                );
+            // Diviser en zones pour chiffres individuels (estimation simple)
+            const digitWidth = 400 / 6; // Jusqu'à 6 chiffres
+            let detectedNumber = '';
+            let confidenceSum = 0;
+            let digitCount = 0;
+
+            for (let i = 0; i < 6; i++) {
+                const digitX = i * digitWidth;
+                const digitY = 0;
                 
-                const rawText = result.data.text;
-                const cleanedWeight = cleanOCRResult(rawText);
+                const pattern = detectSegments(imageData, digitX, digitY, digitWidth, 90);
+                const result = recognizeDigit(pattern);
                 
-                // Gestion de la stabilisation et verrouillage automatique
-                if (cleanedWeight && cleanedWeight.length >= 2) {
-                    // Si c'est la même valeur que la précédente
-                    if (lastRawValue === cleanedWeight) {
+                if (result.confidence > 0.4) {
+                    detectedNumber += result.digit;
+                    confidenceSum += result.confidence;
+                    digitCount++;
+                }
+            }
+
+            // ============= GESTION VERROUILLAGE =============
+            if (detectedNumber && detectedNumber.replace(/\./g, '').length > 0) {
+                const cleanNumber = detectedNumber.replace(/[^0-9.]/g, '');
+                
+                if (cleanNumber && /^[0-9]+(\.[0-9]{1,2})?$/.test(cleanNumber)) {
+                    if (lastDetected === cleanNumber) {
                         stabilityCounter++;
                     } else {
                         stabilityCounter = 1;
-                        lastRawValue = cleanedWeight;
+                        lastDetected = cleanNumber;
                     }
+
+                    const avgConf = digitCount > 0 ? (confidenceSum / digitCount * 100).toFixed(0) : 0;
+                    debugInfo.innerText = `Détecté: ${cleanNumber} (conf: ${avgConf}%, stabilité: ${stabilityCounter}/3)`;
                     
-                    // Afficher la valeur en cours (temporaire)
-                    weightDisplay.innerHTML = cleanedWeight;
-                    weightDisplay.style.opacity = "0.7";
-                    
-                    // Après 3 lectures identiques consécutives -> VERROUILLAGE
+                    weightDisplay.innerHTML = cleanNumber;
+                    weightDisplay.style.opacity = stabilityCounter >= 3 ? "1" : "0.6";
+
                     if (stabilityCounter >= 3) {
-                        if (lockedValue !== cleanedWeight) {
-                            lockedValue = cleanedWeight;
-                            weightDisplay.innerHTML = cleanedWeight;
-                            weightDisplay.style.opacity = "1";
-                            statusDiv.innerHTML = "🔒 VERROUILLÉ ! POIDS STABLE";
+                        if (lockedValue !== cleanNumber) {
+                            lockedValue = cleanNumber;
+                            statusDiv.innerHTML = "🔒 VERROUILLÉ !";
                             statusDiv.style.color = "#00ff00";
                             statusDiv.style.background = "#003300";
-                        } else {
-                            statusDiv.innerHTML = "✅ VERROUILLAGE ACTIF - OK";
-                            statusDiv.style.color = "#88ff88";
+                            
+                            // Afficher champ édition
+                            editInput.value = cleanNumber;
+                            editSection.style.display = 'block';
+                            editInput.focus();
+                            editInput.select();
                         }
                     } else {
                         statusDiv.innerHTML = `🔄 STABILISATION (${stabilityCounter}/3)`;
                         statusDiv.style.color = "#ffff00";
                     }
                 } else {
-                    // Pas de chiffre détecté
                     stabilityCounter = 0;
-                    lastRawValue = null;
-                    
-                    if (lockedValue) {
-                        // Garder la dernière valeur verrouillée
-                        weightDisplay.innerHTML = lockedValue;
-                        weightDisplay.style.opacity = "1";
-                        statusDiv.innerHTML = "⏸️ EN ATTENTE - CADREZ L'AFFICHAGE";
-                        statusDiv.style.color = "#ffaa00";
-                    } else {
-                        weightDisplay.innerHTML = "----";
-                        weightDisplay.style.opacity = "1";
-                        statusDiv.innerHTML = "🔍 AUCUN CHIFFRE - RAPPROCHEZ-VOUS";
-                        statusDiv.style.color = "#ff6666";
-                    }
+                    debugInfo.innerText = `Invalide: ${detectedNumber}`;
                 }
-                
-            } catch(e) {
-                console.error("OCR Error:", e);
-                statusDiv.innerHTML = "⚠️ ERREUR LECTURE";
+            } else {
+                stabilityCounter = 0;
+                debugInfo.innerText = 'Aucun chiffre détecté';
+                statusDiv.innerHTML = "🔍 RAPPROCHEZ-VOUS";
+                statusDiv.style.color = "#ff6666";
             }
-            
-            // Boucle toutes les 300ms pour ne pas surcharger
-            setTimeout(captureAndRead, 300);
+
+            setTimeout(captureAndRead, 400);
         }
-        
-        // ========== RÉINITIALISATION DU VERROUILLAGE ==========
+
+        // ============= ÉDITION =============
+        btnValidate.addEventListener('click', function() {
+            const value = editInput.value.trim();
+            if (value) {
+                lockedValue = value;
+                weightDisplay.innerHTML = value;
+                statusDiv.innerHTML = "✅ VALIDÉ MANUELLEMENT";
+                statusDiv.style.color = "#00ff00";
+                editSection.style.display = 'none';
+            }
+        });
+
+        btnCancel.addEventListener('click', function() {
+            editSection.style.display = 'none';
+            stabilityCounter = 0;
+            lastDetected = null;
+        });
+
         function resetLock() {
             lockedValue = null;
-            pendingValue = null;
             stabilityCounter = 0;
-            lastRawValue = null;
+            lastDetected = null;
             weightDisplay.innerHTML = "----";
-            statusDiv.innerHTML = "🔄 VERROUILLAGE RÉINITIALISÉ";
+            editSection.style.display = 'none';
+            statusDiv.innerHTML = "🔄 RÉINITIALIÉ";
             statusDiv.style.color = "#00ff00";
-            setTimeout(() => {
-                if (!lockedValue) statusDiv.innerHTML = "🔍 CADREZ LES CHIFFRES";
-            }, 1500);
         }
-        
-        // ========== INITIALISATION CAMÉRA ==========
+
+        resetBtn.addEventListener('click', resetLock);
+
+        // ============= CAMÉRA =============
         async function initCamera() {
             try {
-                const constraints = {
-                    video: {
-                        facingMode: { exact: "environment" },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                });
                 video.srcObject = stream;
                 await video.play();
                 
-                statusDiv.innerHTML = "🟢 PRÊT - CADREZ L'AFFICHAGE";
+                statusDiv.innerHTML = "🟢 PRÊT";
                 statusDiv.style.color = "#00ff00";
-                
-                // Ajuster la ROI après chargement
+
                 video.addEventListener('loadedmetadata', () => {
                     if (video.videoWidth > video.videoHeight) {
-                        // Paysage
                         roi = { x: 0.15, y: 0.40, width: 0.70, height: 0.18 };
                     } else {
-                        // Portrait
                         roi = { x: 0.10, y: 0.38, width: 0.80, height: 0.20 };
                     }
-                    // Mettre à jour l'affichage du viseur
                     const visor = document.querySelector('.visor');
                     if (visor) {
                         visor.style.top = (roi.y * 100) + '%';
@@ -382,33 +483,26 @@
                         visor.style.height = (roi.height * 100) + '%';
                     }
                 });
-                
-                // Démarrer le scan
+
                 setTimeout(() => {
                     if (video.videoWidth > 0) captureAndRead();
                 }, 500);
-                
+
             } catch(err) {
-                console.error(err);
-                statusDiv.innerHTML = "❌ CAMÉRA INACCESSIBLE - PERMISSIONS";
+                statusDiv.innerHTML = "❌ ERREUR CAMÉRA";
                 statusDiv.style.color = "#ff0000";
             }
         }
-        
-        // Événements
-        resetBtn.addEventListener('click', resetLock);
-        
-        // Nettoyage
+
         window.addEventListener('beforeunload', () => {
             isRunning = false;
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
         });
-        
-        // LANCER
+
         initCamera();
-        
+
     })();
 </script>
 </body>
