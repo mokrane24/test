@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance EasyOCR</title>
-    <script async src="https://cdn.jsdelivr.net/npm/easyocr-js@1.0.0/dist/index.js"></script>
+    <title>Scanner Balance PaddleOCR</title>
+    <script src="https://cdn.jsdelivr.net/npm/@paddlejs/paddleocr@0.1.2/dist/paddleocr.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -67,19 +67,19 @@
             background: #000;
             border: 2px solid #00ff00;
             border-radius: 16px;
-            padding: 10px;
+            padding: 15px;
             margin-bottom: 15px;
             text-align: center;
         }
         #weight {
-            font-size: 4rem;
+            font-size: 4.5rem;
             font-weight: bold;
             font-family: monospace;
             letter-spacing: 4px;
             color: #00ff00;
-            text-shadow: 0 0 5px #00ff00;
+            text-shadow: 0 0 10px #00ff00;
             word-break: break-word;
-            min-height: 60px;
+            min-height: 70px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -87,12 +87,13 @@
         .unit {
             font-size: 0.9rem;
             color: #88ff88;
+            margin-top: 5px;
         }
         #status {
-            font-size: 11px;
+            font-size: 12px;
             background: #111;
             display: inline-block;
-            padding: 6px 16px;
+            padding: 8px 16px;
             border-radius: 30px;
             margin-bottom: 12px;
             font-weight: bold;
@@ -104,6 +105,7 @@
             border-radius: 8px;
             image-rendering: crisp-edges;
             margin-bottom: 10px;
+            max-height: 80px;
         }
         .info {
             font-size: 10px;
@@ -117,11 +119,11 @@
             border: none;
             font-family: monospace;
             font-weight: bold;
-            padding: 6px 14px;
+            padding: 8px 16px;
             border-radius: 30px;
-            margin-left: 10px;
             cursor: pointer;
             color: #000;
+            font-size: 12px;
         }
         button:hover {
             background: #00dd00;
@@ -130,25 +132,40 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 10px;
         }
         .debug-section {
             background: #1a1a1a;
-            padding: 10px;
+            padding: 12px;
             border-radius: 8px;
             margin-top: 10px;
-            font-size: 9px;
+            font-size: 10px;
+            color: #0f0;
+            border-left: 3px solid #0f0;
+        }
+        .edit-section {
+            background: #1a1a1a;
+            padding: 15px;
+            border-left: 3px solid #ffaa00;
+            border-radius: 8px;
+            margin-bottom: 15px;
         }
         .edit-input {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             background: #000;
             border: 2px solid #ffaa00;
             color: #ffaa00;
             font-family: monospace;
-            font-size: 1.5rem;
+            font-size: 1.8rem;
             text-align: center;
             border-radius: 8px;
             margin: 10px 0;
+            font-weight: bold;
+        }
+        .edit-input:focus {
+            outline: none;
+            box-shadow: 0 0 10px #ffaa00;
         }
         .button-group {
             display: flex;
@@ -165,16 +182,10 @@
         .btn-cancel {
             background: #ff6666;
         }
-        .edit-section {
-            background: #1a1a1a;
-            padding: 15px;
-            border-left: 3px solid #ffaa00;
-            border-radius: 8px;
-        }
         .spinner {
             display: inline-block;
-            width: 10px;
-            height: 10px;
+            width: 12px;
+            height: 12px;
             border: 2px solid #00ff00;
             border-radius: 50%;
             border-top-color: transparent;
@@ -194,19 +205,20 @@
 
 <div class="controls">
     <div class="flex-row">
-        <div id="status">⏳ CHARGEMENT EASYOCR...</div>
-        <button id="resetBtn">🔄 RESET</button>
+        <div id="status">⏳ CHARGEMENT PADDLEOCR...</div>
+        <button id="resetBtn" style="margin: 0; padding: 6px 12px;">🔄 RESET</button>
     </div>
+
     <div class="weight-panel">
         <div id="weight">----</div>
         <div class="unit">KILOGRAMMES (kg)</div>
     </div>
 
     <div class="edit-section" id="edit-section" style="display:none;">
-        <div style="color: #ffaa00; margin-bottom: 5px;">✏️ MODIFIER :</div>
-        <input type="text" id="edit-input" class="edit-input" placeholder="Entrez la valeur">
+        <div style="color: #ffaa00; margin-bottom: 8px; font-weight: bold;">✏️ MODIFIER LE RÉSULTAT :</div>
+        <input type="text" id="edit-input" class="edit-input" placeholder="Valeur">
         <div class="button-group">
-            <button class="btn-validate" id="btn-validate">✓ OK</button>
+            <button class="btn-validate" id="btn-validate">✓ VALIDER</button>
             <button class="btn-cancel" id="btn-cancel">✗ ANNULER</button>
         </div>
     </div>
@@ -214,11 +226,11 @@
     <canvas id="debugCanvas" width="400" height="90"></canvas>
     
     <div class="debug-section">
-        <div id="debug-info">Prêt...</div>
+        <div id="debug-info">Initialisation...</div>
     </div>
 
     <div class="info">
-        🎯 RECONNAISSANCE EASYOCR (MEILLEUR POUR CHIFFRES)
+        🎯 PADDLEOCR - MEILLEUR OCR POUR CHIFFRES
     </div>
 </div>
 
@@ -241,233 +253,300 @@
         let stabilityCounter = 0;
         let lastDetected = null;
         let roi = { x: 0.12, y: 0.38, width: 0.76, height: 0.20 };
-        let reader = null;
-        let readerReady = false;
+        let ocr = null;
+        let ocrReady = false;
+        let isScanning = false;
 
-        // ============= CHARGEMENT EASYOCR =============
-        async function initEasyOCR() {
+        // ============= CHARGER PADDLEOCR =============
+        async function initPaddleOCR() {
             try {
-                // Charger les workers
-                const { createWorker } = window.Tesseract;
+                debugInfo.innerText = "Chargement PaddleOCR...";
                 
-                // Utiliser une approche différente - chargement direct
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/ocr@latest/dist/ocr.js';
-                document.head.appendChild(script);
+                // Charger depuis CDN avec fallback
+                const PaddleOCR = window.PaddleOCR;
                 
-                script.onload = () => {
-                    readerReady = true;
-                    statusDiv.innerHTML = "🟢 EASYOCR PRÊT";
-                    statusDiv.style.color = "#00ff00";
-                };
+                if (!PaddleOCR) {
+                    throw new Error('PaddleOCR non disponible');
+                }
                 
-                script.onerror = () => {
-                    console.log('Fallback: Utiliser Tesseract amélioré');
-                    readerReady = true;
-                    useEnhancedTesseract = true;
-                    statusDiv.innerHTML = "🟡 MODE AMÉLIORÉ (Tesseract+)";
-                    statusDiv.style.color = "#ffff00";
-                };
+                ocr = new PaddleOCR.PaddleOCR();
+                
+                ocr.ready = false;
+                
+                // Attendre que le modèle soit chargé
+                await new Promise(resolve => {
+                    const checkReady = setInterval(() => {
+                        if (ocr && ocr.ready) {
+                            clearInterval(checkReady);
+                            ocrReady = true;
+                            resolve();
+                        }
+                    }, 500);
+                    
+                    // Timeout après 30 secondes
+                    setTimeout(() => {
+                        clearInterval(checkReady);
+                        ocrReady = true;
+                        resolve();
+                    }, 30000);
+                });
+                
+                debugInfo.innerText = '✅ PaddleOCR PRÊT';
+                statusDiv.innerHTML = "🟢 PRÊT - CADREZ L'AFFICHAGE";
+                statusDiv.style.color = "#00ff00";
                 
             } catch(err) {
-                console.error('EasyOCR Error:', err);
-                readerReady = true;
-                statusDiv.innerHTML = "🟡 MODE AMÉLIORÉ";
+                console.error('PaddleOCR Error:', err);
+                debugInfo.innerText = '⚠️ PaddleOCR: Fallback Tesseract';
+                ocrReady = true; // Continuer avec Tesseract
+                statusDiv.innerHTML = "🟡 MODE TESSERACT";
                 statusDiv.style.color = "#ffff00";
             }
         }
 
-        let useEnhancedTesseract = false;
-
-        // ============= PREPROCESSING AMÉLIORÉ =============
-        function preprocessImage(ctx, width, height) {
-            const imgData = ctx.getImageData(0, 0, width, height);
-            const data = imgData.data;
-            
-            // 1. Convertir en grayscale
-            let sum = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                const gray = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
-                sum += gray;
-                data[i] = data[i+1] = data[i+2] = gray;
-            }
-            const avg = sum / (data.length / 4);
-            
-            // 2. Seuil adaptatif très agressif pour LED
-            const threshold = avg * 0.7;
-            
-            for (let i = 0; i < data.length; i += 4) {
-                const gray = data[i];
-                data[i] = data[i+1] = data[i+2] = (gray > threshold) ? 0 : 255;
-            }
-            
-            // 3. Dilatation (combler trous)
-            const temp = new Uint8ClampedArray(data);
-            for (let y = 1; y < height - 1; y++) {
-                for (let x = 1; x < width - 1; x++) {
-                    let max = temp[(y * width + x) * 4];
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            max = Math.max(max, temp[((y+dy) * width + (x+dx)) * 4]);
-                        }
-                    }
-                    const idx = (y * width + x) * 4;
-                    data[idx] = data[idx+1] = data[idx+2] = max;
+        // ============= RECONNAISSANCE PADDLEOCR =============
+        async function recognizeWithPaddleOCR(canvas) {
+            try {
+                if (!ocr) {
+                    return { text: '', confidence: 0 };
                 }
+
+                const result = await ocr.recognize(canvas);
+                
+                if (!result || !result.data) {
+                    return { text: '', confidence: 0 };
+                }
+
+                let fullText = '';
+                let avgConfidence = 0;
+                let count = 0;
+
+                // Extraire et filtrer les textes détectés
+                for (const item of result.data) {
+                    const text = item.text || '';
+                    const confidence = item.confidence || 0;
+                    
+                    // Garder uniquement les chiffres et points
+                    const cleaned = text.replace(/[^0-9.]/g, '');
+                    
+                    if (cleaned && confidence > 0.1) {
+                        fullText += cleaned;
+                        avgConfidence += confidence;
+                        count++;
+                    }
+                }
+
+                return {
+                    text: fullText,
+                    confidence: count > 0 ? avgConfidence / count : 0
+                };
+
+            } catch(e) {
+                console.error('PaddleOCR Recognition Error:', e);
+                return { text: '', confidence: 0 };
             }
-            
-            ctx.putImageData(imgData, 0, 0);
+        }
+
+        // ============= RECONNAISSANCE TESSERACT (FALLBACK) =============
+        async function recognizeWithTesseract(canvas) {
+            try {
+                const { Tesseract } = window;
+                if (!Tesseract) return { text: '', confidence: 0 };
+
+                const result = await Tesseract.recognize(canvas, 'eng', {
+                    tessedit_char_whitelist: '0123456789.,',
+                    tessedit_pageseg_mode: '7',
+                    tessedit_ocr_engine_mode: '1',
+                });
+
+                let text = result.data.text.trim();
+                
+                // Corrections
+                text = text.replace(/O/g, '0').replace(/o/g, '0')
+                           .replace(/I/g, '1').replace(/l/g, '1')
+                           .replace(/Z/g, '2').replace(/B/g, '8')
+                           .replace(/S/g, '5').replace(/G/g, '9');
+
+                return { text, confidence: result.data.confidence };
+
+            } catch(e) {
+                console.error('Tesseract Error:', e);
+                return { text: '', confidence: 0 };
+            }
         }
 
         // ============= NETTOYAGE RESULTAT =============
-        function cleanOCRResult(text) {
+        function cleanResult(text) {
+            if (!text) return null;
+            
             // Garder uniquement chiffres et points
             let cleaned = text.replace(/[^0-9.]/g, '');
             
-            // Si virgule, remplacer par point
-            cleaned = cleaned.replace(/,/g, '.');
-            
-            // Garder un seul point
+            // Un seul point
             const parts = cleaned.split('.');
             if (parts.length > 2) {
                 cleaned = parts[0] + '.' + parts.slice(1).join('');
             }
-            
-            // Vérifier format
-            if (!cleaned || !/^[0-9]+(\.[0-9]{1,2})?$/.test(cleaned)) {
+
+            // Format valide
+            if (!cleaned || !/^[0-9]+(\.[0-9]{1,3})?$/.test(cleaned)) {
                 return null;
             }
-            
-            // Vérifier plage poids (0 à 90000 kg)
+
+            // Plage poids valide (0-99999 kg)
             const val = parseFloat(cleaned);
-            if (val < 0 || val > 90000) return null;
-            
+            if (val < 0 || val > 99999) return null;
+
             return cleaned;
         }
 
-        // ============= RECONNAISSANCE AVEC TESSERACT AMÉLIORÉ =============
-        async function recognizeWithTesseract(canvas) {
-            try {
-                const { Tesseract } = window;
-                
-                const result = await Tesseract.recognize(
-                    canvas,
-                    'eng',
-                    {
-                        tessedit_char_whitelist: '0123456789.,',
-                        tessedit_pageseg_mode: '7',
-                        tessedit_ocr_engine_mode: '1',
-                        tesseract_create_hocr: 0,
-                    }
-                );
-                
-                let text = result.data.text.trim();
-                
-                // Corrections manuelles courantes
-                text = text.replace(/O/g, '0')
-                           .replace(/o/g, '0')
-                           .replace(/I/g, '1')
-                           .replace(/l/g, '1')
-                           .replace(/Z/g, '2')
-                           .replace(/B/g, '8')
-                           .replace(/S/g, '5')
-                           .replace(/G/g, '9');
-                
-                const cleaned = cleanOCRResult(text);
-                const confidence = result.data.confidence;
-                
-                return { text: cleaned || '', confidence, rawText: text };
-                
-            } catch(e) {
-                console.error('Tesseract Error:', e);
-                return { text: '', confidence: 0, rawText: '', error: e.message };
+        // ============= PREPROCESSING OPTIMAL =============
+        function preprocessImage(ctx, width, height) {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+
+            // Grayscale
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+                data[i] = data[i+1] = data[i+2] = gray;
             }
+
+            // Contraste CLAHE-like (local adaptive)
+            const blockSize = 16;
+            for (let by = 0; by < height; by += blockSize) {
+                for (let bx = 0; bx < width; bx += blockSize) {
+                    const bh = Math.min(blockSize, height - by);
+                    const bw = Math.min(blockSize, width - bx);
+
+                    let min = 255, max = 0;
+                    for (let y = by; y < by + bh; y++) {
+                        for (let x = bx; x < bx + bw; x++) {
+                            const val = data[(y * width + x) * 4];
+                            min = Math.min(min, val);
+                            max = Math.max(max, val);
+                        }
+                    }
+
+                    const range = max - min || 1;
+                    for (let y = by; y < by + bh; y++) {
+                        for (let x = bx; x < bx + bw; x++) {
+                            const idx = (y * width + x) * 4;
+                            const normalized = ((data[idx] - min) / range) * 255;
+                            data[idx] = data[idx+1] = data[idx+2] = normalized;
+                        }
+                    }
+                }
+            }
+
+            ctx.putImageData(imgData, 0, 0);
         }
 
         // ============= SCAN PRINCIPAL =============
         async function captureAndRead() {
-            if (!isRunning || !readerReady) {
-                requestAnimationFrame(() => setTimeout(captureAndRead, 150));
+            if (!isRunning || !ocrReady || isScanning) {
+                requestAnimationFrame(() => setTimeout(captureAndRead, 100));
                 return;
             }
-            
+
             if (video.videoWidth === 0) {
-                requestAnimationFrame(() => setTimeout(captureAndRead, 150));
+                requestAnimationFrame(() => setTimeout(captureAndRead, 100));
                 return;
             }
 
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
-            const roiX = Math.floor(vw * roi.x);
-            const roiY = Math.floor(vh * roi.y);
-            const roiW = Math.floor(vw * roi.width);
-            const roiH = Math.floor(vh * roi.height);
+            isScanning = true;
 
-            // Capturer
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = 500;
-            tempCanvas.height = 120;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, 500, 120);
-            
-            // Prétraiter
-            preprocessImage(tempCtx, 500, 120);
+            try {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                const roiX = Math.floor(vw * roi.x);
+                const roiY = Math.floor(vh * roi.y);
+                const roiW = Math.floor(vw * roi.width);
+                const roiH = Math.floor(vh * roi.height);
 
-            // Afficher debug
-            ctx.drawImage(tempCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
+                // Capturer
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = 600;
+                tempCanvas.height = 150;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, 600, 150);
 
-            // Reconnaître
-            const result = await recognizeWithTesseract(tempCanvas);
+                // Prétraiter
+                preprocessImage(tempCtx, 600, 150);
 
-            if (result.text && result.confidence > 0.2) {
-                if (lastDetected === result.text) {
-                    stabilityCounter++;
+                // Afficher debug
+                ctx.drawImage(tempCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
+
+                // Reconnaître avec PaddleOCR ou Tesseract
+                let result;
+                if (ocrReady && ocr) {
+                    result = await recognizeWithPaddleOCR(tempCanvas);
                 } else {
-                    stabilityCounter = 1;
-                    lastDetected = result.text;
+                    result = await recognizeWithTesseract(tempCanvas);
                 }
 
-                debugInfo.innerText = `"${result.text}" (conf: ${(result.confidence*100).toFixed(0)}%, stab: ${stabilityCounter}/3)`;
-                
-                weightDisplay.innerHTML = result.text;
-                weightDisplay.style.opacity = stabilityCounter >= 3 ? "1" : "0.6";
+                const cleaned = cleanResult(result.text);
 
-                if (stabilityCounter >= 3) {
-                    if (lockedValue !== result.text) {
-                        lockedValue = result.text;
-                        statusDiv.innerHTML = "🔒 VERROUILLÉ !";
-                        statusDiv.style.color = "#00ff00";
-                        statusDiv.style.background = "#003300";
-                        
-                        // Afficher édition
-                        editInput.value = result.text;
-                        editSection.style.display = 'block';
-                        editInput.focus();
-                        editInput.select();
+                if (cleaned && result.confidence > 0.15) {
+                    if (lastDetected === cleaned) {
+                        stabilityCounter++;
+                    } else {
+                        stabilityCounter = 1;
+                        lastDetected = cleaned;
+                    }
+
+                    debugInfo.innerText = `"${cleaned}" | Conf: ${(result.confidence*100).toFixed(0)}% | Stab: ${stabilityCounter}/3`;
+
+                    weightDisplay.innerHTML = cleaned;
+                    weightDisplay.style.opacity = stabilityCounter >= 3 ? "1" : "0.6";
+                    weightDisplay.style.color = stabilityCounter >= 3 ? "#00ff00" : "#88ff88";
+
+                    if (stabilityCounter >= 3) {
+                        if (lockedValue !== cleaned) {
+                            lockedValue = cleaned;
+                            statusDiv.innerHTML = "🔒 VERROUILLÉ !";
+                            statusDiv.style.color = "#00ff00";
+                            statusDiv.style.background = "#003300";
+
+                            editInput.value = cleaned;
+                            editSection.style.display = 'block';
+                            editInput.focus();
+                            editInput.select();
+                        }
+                    } else {
+                        statusDiv.innerHTML = `🔄 STABILISATION (${stabilityCounter}/3)`;
+                        statusDiv.style.color = "#ffff00";
+                        statusDiv.style.background = "#1a1a00";
                     }
                 } else {
-                    statusDiv.innerHTML = `🔄 STABILISATION (${stabilityCounter}/3)`;
-                    statusDiv.style.color = "#ffff00";
+                    stabilityCounter = 0;
+                    debugInfo.innerText = `Pas de chiffre | Brut: "${result.text}" | Conf: ${(result.confidence*100).toFixed(0)}%`;
+                    statusDiv.innerHTML = "🔍 RAPPROCHEZ-VOUS";
+                    statusDiv.style.color = "#ff6666";
+                    statusDiv.style.background = "#1a0000";
                 }
-            } else {
-                stabilityCounter = 0;
-                debugInfo.innerText = `Rien détecté (raw: "${result.rawText}", conf: ${(result.confidence*100).toFixed(0)}%)`;
-                statusDiv.innerHTML = "🔍 RAPPROCHEZ-VOUS";
-                statusDiv.style.color = "#ff6666";
-            }
 
-            setTimeout(captureAndRead, 500);
+            } catch(err) {
+                console.error('Scan Error:', err);
+                debugInfo.innerText = 'Erreur: ' + err.message;
+            } finally {
+                isScanning = false;
+                setTimeout(captureAndRead, 500);
+            }
         }
 
         // ============= ÉDITION =============
         btnValidate.addEventListener('click', function() {
             const value = editInput.value.trim();
-            if (value) {
+            if (value && /^[0-9]+(\.[0-9]{1,3})?$/.test(value)) {
                 lockedValue = value;
                 weightDisplay.innerHTML = value;
+                weightDisplay.style.color = "#00ff00";
                 statusDiv.innerHTML = "✅ VALIDÉ MANUELLEMENT";
                 statusDiv.style.color = "#00ff00";
+                statusDiv.style.background = "#003300";
                 editSection.style.display = 'none';
+            } else {
+                alert('Format invalide !');
             }
         });
 
@@ -482,9 +561,11 @@
             stabilityCounter = 0;
             lastDetected = null;
             weightDisplay.innerHTML = "----";
+            weightDisplay.style.color = "#00ff00";
             editSection.style.display = 'none';
             statusDiv.innerHTML = "🔄 RÉINITIALISÉ";
             statusDiv.style.color = "#00ff00";
+            statusDiv.style.background = "#003300";
         }
 
         resetBtn.addEventListener('click', resetLock);
@@ -493,10 +574,11 @@
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: { exact: "environment" }, 
-                        width: { ideal: 1280 }, 
-                        height: { ideal: 720 } 
+                    video: {
+                        facingMode: { exact: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 15 }
                     }
                 });
                 video.srcObject = stream;
@@ -524,6 +606,7 @@
             } catch(err) {
                 statusDiv.innerHTML = "❌ ERREUR CAMÉRA";
                 statusDiv.style.color = "#ff0000";
+                debugInfo.innerText = err.message;
             }
         }
 
@@ -535,7 +618,7 @@
         });
 
         // LANCER
-        initEasyOCR();
+        initPaddleOCR();
         initCamera();
 
     })();
