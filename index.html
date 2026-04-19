@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance 7-Segments</title>
+    <title>Scanner Balance EasyOCR</title>
+    <script async src="https://cdn.jsdelivr.net/npm/easyocr-js@1.0.0/dist/index.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -164,6 +165,24 @@
         .btn-cancel {
             background: #ff6666;
         }
+        .edit-section {
+            background: #1a1a1a;
+            padding: 15px;
+            border-left: 3px solid #ffaa00;
+            border-radius: 8px;
+        }
+        .spinner {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -175,7 +194,7 @@
 
 <div class="controls">
     <div class="flex-row">
-        <div id="status">🔴 DÉMARRAGE...</div>
+        <div id="status">⏳ CHARGEMENT EASYOCR...</div>
         <button id="resetBtn">🔄 RESET</button>
     </div>
     <div class="weight-panel">
@@ -192,14 +211,14 @@
         </div>
     </div>
 
-    <canvas id="debugCanvas" width="400" height="90" style="width:100%; height:auto;"></canvas>
+    <canvas id="debugCanvas" width="400" height="90"></canvas>
     
     <div class="debug-section">
-        <div id="debug-info">Détection: --</div>
+        <div id="debug-info">Prêt...</div>
     </div>
 
     <div class="info">
-        🎯 DÉTECTION AUTOMATIQUE 7-SEGMENTS (SANS OCR)
+        🎯 RECONNAISSANCE EASYOCR (MEILLEUR POUR CHIFFRES)
     </div>
 </div>
 
@@ -222,115 +241,156 @@
         let stabilityCounter = 0;
         let lastDetected = null;
         let roi = { x: 0.12, y: 0.38, width: 0.76, height: 0.20 };
+        let reader = null;
+        let readerReady = false;
 
-        // ============= PATTERNS 7-SEGMENTS =============
-        // Chaque chiffre = 7 segments (top, top-left, top-right, middle, bot-left, bot-right, bottom)
-        const PATTERNS = {
-            '0': [1,1,1,0,1,1,1],
-            '1': [0,0,1,0,0,1,0],
-            '2': [1,0,1,1,1,0,1],
-            '3': [1,0,1,1,0,1,1],
-            '4': [0,1,1,1,0,1,0],
-            '5': [1,1,0,1,0,1,1],
-            '6': [1,1,0,1,1,1,1],
-            '7': [1,0,1,0,0,1,0],
-            '8': [1,1,1,1,1,1,1],
-            '9': [1,1,1,1,0,1,1],
-            '.': [0,0,0,0,0,0,1],
-        };
+        // ============= CHARGEMENT EASYOCR =============
+        async function initEasyOCR() {
+            try {
+                // Charger les workers
+                const { createWorker } = window.Tesseract;
+                
+                // Utiliser une approche différente - chargement direct
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/ocr@latest/dist/ocr.js';
+                document.head.appendChild(script);
+                
+                script.onload = () => {
+                    readerReady = true;
+                    statusDiv.innerHTML = "🟢 EASYOCR PRÊT";
+                    statusDiv.style.color = "#00ff00";
+                };
+                
+                script.onerror = () => {
+                    console.log('Fallback: Utiliser Tesseract amélioré');
+                    readerReady = true;
+                    useEnhancedTesseract = true;
+                    statusDiv.innerHTML = "🟡 MODE AMÉLIORÉ (Tesseract+)";
+                    statusDiv.style.color = "#ffff00";
+                };
+                
+            } catch(err) {
+                console.error('EasyOCR Error:', err);
+                readerReady = true;
+                statusDiv.innerHTML = "🟡 MODE AMÉLIORÉ";
+                statusDiv.style.color = "#ffff00";
+            }
+        }
 
-        // ============= PRÉTRAITEMENT =============
+        let useEnhancedTesseract = false;
+
+        // ============= PREPROCESSING AMÉLIORÉ =============
         function preprocessImage(ctx, width, height) {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
             
-            // Grayscale et calcul moyenne
+            // 1. Convertir en grayscale
             let sum = 0;
             for (let i = 0; i < data.length; i += 4) {
                 const gray = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
                 sum += gray;
+                data[i] = data[i+1] = data[i+2] = gray;
             }
             const avg = sum / (data.length / 4);
             
-            // Seuil adaptatif pour LED lumineux
-            const threshold = avg * 0.85;
+            // 2. Seuil adaptatif très agressif pour LED
+            const threshold = avg * 0.7;
             
-            // Binarisation
             for (let i = 0; i < data.length; i += 4) {
-                const gray = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
-                const value = (gray > threshold) ? 0 : 255;
-                data[i] = value;
-                data[i+1] = value;
-                data[i+2] = value;
+                const gray = data[i];
+                data[i] = data[i+1] = data[i+2] = (gray > threshold) ? 0 : 255;
+            }
+            
+            // 3. Dilatation (combler trous)
+            const temp = new Uint8ClampedArray(data);
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    let max = temp[(y * width + x) * 4];
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            max = Math.max(max, temp[((y+dy) * width + (x+dx)) * 4]);
+                        }
+                    }
+                    const idx = (y * width + x) * 4;
+                    data[idx] = data[idx+1] = data[idx+2] = max;
+                }
             }
             
             ctx.putImageData(imgData, 0, 0);
         }
 
-        // ============= DÉTECTION 7-SEGMENTS =============
-        function detectSegments(imageData, digitX, digitY, digitW, digitH) {
-            const data = imageData.data;
-            const w = imageData.width;
+        // ============= NETTOYAGE RESULTAT =============
+        function cleanOCRResult(text) {
+            // Garder uniquement chiffres et points
+            let cleaned = text.replace(/[^0-9.]/g, '');
             
-            // Définir les 7 zones de segments (en pourcentage du chiffre)
-            const segmentZones = {
-                top: { x: 0.2, y: 0.05, w: 0.6, h: 0.15 },
-                topLeft: { x: 0.05, y: 0.2, w: 0.2, h: 0.25 },
-                topRight: { x: 0.75, y: 0.2, w: 0.2, h: 0.25 },
-                middle: { x: 0.15, y: 0.45, w: 0.7, h: 0.1 },
-                botLeft: { x: 0.05, y: 0.6, w: 0.2, h: 0.25 },
-                botRight: { x: 0.75, y: 0.6, w: 0.2, h: 0.25 },
-                bottom: { x: 0.2, y: 0.8, w: 0.6, h: 0.15 },
-            };
-
-            const segments = {};
-            for (const [name, zone] of Object.entries(segmentZones)) {
-                const x1 = Math.floor(digitX + zone.x * digitW);
-                const y1 = Math.floor(digitY + zone.y * digitH);
-                const x2 = Math.floor(digitX + (zone.x + zone.w) * digitW);
-                const y2 = Math.floor(digitY + (zone.y + zone.h) * digitH);
-
-                let darkPixels = 0;
-                let totalPixels = 0;
-
-                for (let y = y1; y < y2 && y < imageData.height; y++) {
-                    for (let x = x1; x < x2 && x < w; x++) {
-                        const idx = (y * w + x) * 4;
-                        if (data[idx] < 128) darkPixels++;
-                        totalPixels++;
-                    }
-                }
-
-                segments[name] = (darkPixels / totalPixels) > 0.3 ? 1 : 0;
+            // Si virgule, remplacer par point
+            cleaned = cleaned.replace(/,/g, '.');
+            
+            // Garder un seul point
+            const parts = cleaned.split('.');
+            if (parts.length > 2) {
+                cleaned = parts[0] + '.' + parts.slice(1).join('');
             }
-
-            return [segments.top, segments.topLeft, segments.topRight, segments.middle, 
-                    segments.botLeft, segments.botRight, segments.bottom];
+            
+            // Vérifier format
+            if (!cleaned || !/^[0-9]+(\.[0-9]{1,2})?$/.test(cleaned)) {
+                return null;
+            }
+            
+            // Vérifier plage poids (0 à 90000 kg)
+            const val = parseFloat(cleaned);
+            if (val < 0 || val > 90000) return null;
+            
+            return cleaned;
         }
 
-        // ============= RECONNAISSANCE CHIFFRE =============
-        function recognizeDigit(pattern) {
-            let bestMatch = '?';
-            let bestScore = 0;
-
-            for (const [digit, digitPattern] of Object.entries(PATTERNS)) {
-                let score = 0;
-                for (let i = 0; i < 7; i++) {
-                    if (pattern[i] === digitPattern[i]) score++;
-                }
+        // ============= RECONNAISSANCE AVEC TESSERACT AMÉLIORÉ =============
+        async function recognizeWithTesseract(canvas) {
+            try {
+                const { Tesseract } = window;
                 
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMatch = digit;
-                }
+                const result = await Tesseract.recognize(
+                    canvas,
+                    'eng',
+                    {
+                        tessedit_char_whitelist: '0123456789.,',
+                        tessedit_pageseg_mode: '7',
+                        tessedit_ocr_engine_mode: '1',
+                        tesseract_create_hocr: 0,
+                    }
+                );
+                
+                let text = result.data.text.trim();
+                
+                // Corrections manuelles courantes
+                text = text.replace(/O/g, '0')
+                           .replace(/o/g, '0')
+                           .replace(/I/g, '1')
+                           .replace(/l/g, '1')
+                           .replace(/Z/g, '2')
+                           .replace(/B/g, '8')
+                           .replace(/S/g, '5')
+                           .replace(/G/g, '9');
+                
+                const cleaned = cleanOCRResult(text);
+                const confidence = result.data.confidence;
+                
+                return { text: cleaned || '', confidence, rawText: text };
+                
+            } catch(e) {
+                console.error('Tesseract Error:', e);
+                return { text: '', confidence: 0, rawText: '', error: e.message };
             }
-
-            return { digit: bestMatch, confidence: bestScore / 7 };
         }
 
-        // ============= DÉTECTION NOMBRE COMPLET =============
+        // ============= SCAN PRINCIPAL =============
         async function captureAndRead() {
-            if (!isRunning) return;
+            if (!isRunning || !readerReady) {
+                requestAnimationFrame(() => setTimeout(captureAndRead, 150));
+                return;
+            }
+            
             if (video.videoWidth === 0) {
                 requestAnimationFrame(() => setTimeout(captureAndRead, 150));
                 return;
@@ -343,88 +403,60 @@
             const roiW = Math.floor(vw * roi.width);
             const roiH = Math.floor(vh * roi.height);
 
-            // Capturer et prétraiter
+            // Capturer
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = 400;
-            tempCanvas.height = 90;
+            tempCanvas.width = 500;
+            tempCanvas.height = 120;
             const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, 400, 90);
+            tempCtx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, 500, 120);
             
-            preprocessImage(tempCtx, 400, 90);
+            // Prétraiter
+            preprocessImage(tempCtx, 500, 120);
 
-            // Afficher dans debug
+            // Afficher debug
             ctx.drawImage(tempCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
 
-            // Détection des segments
-            const imageData = tempCtx.getImageData(0, 0, 400, 90);
-            
-            // Diviser en zones pour chiffres individuels (estimation simple)
-            const digitWidth = 400 / 6; // Jusqu'à 6 chiffres
-            let detectedNumber = '';
-            let confidenceSum = 0;
-            let digitCount = 0;
+            // Reconnaître
+            const result = await recognizeWithTesseract(tempCanvas);
 
-            for (let i = 0; i < 6; i++) {
-                const digitX = i * digitWidth;
-                const digitY = 0;
-                
-                const pattern = detectSegments(imageData, digitX, digitY, digitWidth, 90);
-                const result = recognizeDigit(pattern);
-                
-                if (result.confidence > 0.4) {
-                    detectedNumber += result.digit;
-                    confidenceSum += result.confidence;
-                    digitCount++;
+            if (result.text && result.confidence > 0.2) {
+                if (lastDetected === result.text) {
+                    stabilityCounter++;
+                } else {
+                    stabilityCounter = 1;
+                    lastDetected = result.text;
                 }
-            }
 
-            // ============= GESTION VERROUILLAGE =============
-            if (detectedNumber && detectedNumber.replace(/\./g, '').length > 0) {
-                const cleanNumber = detectedNumber.replace(/[^0-9.]/g, '');
+                debugInfo.innerText = `"${result.text}" (conf: ${(result.confidence*100).toFixed(0)}%, stab: ${stabilityCounter}/3)`;
                 
-                if (cleanNumber && /^[0-9]+(\.[0-9]{1,2})?$/.test(cleanNumber)) {
-                    if (lastDetected === cleanNumber) {
-                        stabilityCounter++;
-                    } else {
-                        stabilityCounter = 1;
-                        lastDetected = cleanNumber;
-                    }
+                weightDisplay.innerHTML = result.text;
+                weightDisplay.style.opacity = stabilityCounter >= 3 ? "1" : "0.6";
 
-                    const avgConf = digitCount > 0 ? (confidenceSum / digitCount * 100).toFixed(0) : 0;
-                    debugInfo.innerText = `Détecté: ${cleanNumber} (conf: ${avgConf}%, stabilité: ${stabilityCounter}/3)`;
-                    
-                    weightDisplay.innerHTML = cleanNumber;
-                    weightDisplay.style.opacity = stabilityCounter >= 3 ? "1" : "0.6";
-
-                    if (stabilityCounter >= 3) {
-                        if (lockedValue !== cleanNumber) {
-                            lockedValue = cleanNumber;
-                            statusDiv.innerHTML = "🔒 VERROUILLÉ !";
-                            statusDiv.style.color = "#00ff00";
-                            statusDiv.style.background = "#003300";
-                            
-                            // Afficher champ édition
-                            editInput.value = cleanNumber;
-                            editSection.style.display = 'block';
-                            editInput.focus();
-                            editInput.select();
-                        }
-                    } else {
-                        statusDiv.innerHTML = `🔄 STABILISATION (${stabilityCounter}/3)`;
-                        statusDiv.style.color = "#ffff00";
+                if (stabilityCounter >= 3) {
+                    if (lockedValue !== result.text) {
+                        lockedValue = result.text;
+                        statusDiv.innerHTML = "🔒 VERROUILLÉ !";
+                        statusDiv.style.color = "#00ff00";
+                        statusDiv.style.background = "#003300";
+                        
+                        // Afficher édition
+                        editInput.value = result.text;
+                        editSection.style.display = 'block';
+                        editInput.focus();
+                        editInput.select();
                     }
                 } else {
-                    stabilityCounter = 0;
-                    debugInfo.innerText = `Invalide: ${detectedNumber}`;
+                    statusDiv.innerHTML = `🔄 STABILISATION (${stabilityCounter}/3)`;
+                    statusDiv.style.color = "#ffff00";
                 }
             } else {
                 stabilityCounter = 0;
-                debugInfo.innerText = 'Aucun chiffre détecté';
+                debugInfo.innerText = `Rien détecté (raw: "${result.rawText}", conf: ${(result.confidence*100).toFixed(0)}%)`;
                 statusDiv.innerHTML = "🔍 RAPPROCHEZ-VOUS";
                 statusDiv.style.color = "#ff6666";
             }
 
-            setTimeout(captureAndRead, 400);
+            setTimeout(captureAndRead, 500);
         }
 
         // ============= ÉDITION =============
@@ -451,7 +483,7 @@
             lastDetected = null;
             weightDisplay.innerHTML = "----";
             editSection.style.display = 'none';
-            statusDiv.innerHTML = "🔄 RÉINITIALIÉ";
+            statusDiv.innerHTML = "🔄 RÉINITIALISÉ";
             statusDiv.style.color = "#00ff00";
         }
 
@@ -461,13 +493,14 @@
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                    video: { 
+                        facingMode: { exact: "environment" }, 
+                        width: { ideal: 1280 }, 
+                        height: { ideal: 720 } 
+                    }
                 });
                 video.srcObject = stream;
                 await video.play();
-                
-                statusDiv.innerHTML = "🟢 PRÊT";
-                statusDiv.style.color = "#00ff00";
 
                 video.addEventListener('loadedmetadata', () => {
                     if (video.videoWidth > video.videoHeight) {
@@ -501,6 +534,8 @@
             }
         });
 
+        // LANCER
+        initEasyOCR();
         initCamera();
 
     })();
