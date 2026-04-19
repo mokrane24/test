@@ -1,385 +1,134 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance - Zone Ajustable</title>
-    <style>
-        body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; }
-        
-        .container { display: flex; flex-direction: column; height: 100vh; }
-        
-        #video { 
-            width: 100%; 
-            height: 50vh; 
-            display: block;
-            position: relative;
-        }
-        
-        .roi-guide {
-            position: absolute;
-            top: 30%;
-            left: 20%;
-            width: 60%;
-            height: 15%;
-            border: 3px solid #ff0000;
-            box-shadow: 0 0 20px #ff0000;
-            pointer-events: none;
-            z-index: 10;
-        }
-        
-        .controls { 
-            background: #0a0a0a;
-            padding: 20px;
-            overflow-y: auto;
-            flex: 1;
-        }
-        
-        .section {
-            margin-bottom: 20px;
-            background: #1a1a1a;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 3px solid #ff0000;
-        }
-        
-        .section-title {
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #ff0000;
-        }
-        
-        #weight { 
-            font-size: 4rem; 
-            font-weight: bold; 
-            color: #ff0000;
-            margin: 20px 0;
-            text-align: center;
-        }
-        
-        button { 
-            padding: 12px 25px; 
-            font-size: 14px; 
-            background: #ff0000; 
-            color: #fff; 
-            border: none; 
-            cursor: pointer; 
-            font-weight: bold;
-            margin: 5px;
-            border-radius: 4px;
-        }
-        
-        button:hover { background: #ff3333; }
-        
-        canvas { 
-            width: 100%;
-            border: 1px solid #333;
-            margin: 10px 0;
-            background: #000;
-        }
-        
-        #info { 
-            color: #999; 
-            margin-top: 10px; 
-            font-size: 12px;
-            line-height: 1.6;
-        }
+<meta charset="UTF-8">
+<title>Scanner Balance PRO</title>
 
-        .slider-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin: 15px 0;
-        }
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
-        .slider-item {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .slider-item label {
-            font-size: 11px;
-            color: #ff0000;
-        }
-
-        .slider-item input {
-            width: 100%;
-        }
-
-        .slider-item input[type="range"] {
-            cursor: pointer;
-        }
-
-        .slider-item input[type="number"] {
-            padding: 5px;
-            background: #000;
-            border: 1px solid #ff0000;
-            color: #ff0000;
-            text-align: center;
-        }
-    </style>
+<style>
+body { margin:0; background:#000; color:#fff; font-family:monospace; }
+#video { width:100%; height:50vh; }
+#weight { font-size:4rem; text-align:center; color:red; }
+.roi { position:absolute; border:3px solid red; top:30%; left:20%; width:60%; height:15%; }
+</style>
 </head>
+
 <body>
 
-<div class="container">
-    <div style="position: relative;">
-        <video id="video" autoplay playsinline muted></video>
-        <div class="roi-guide"></div>
-    </div>
-
-    <div class="controls">
-        <!-- RÉSULTAT -->
-        <div class="section">
-            <div class="section-title">📊 POIDS</div>
-            <div id="weight">----</div>
-            <div id="info">Prêt - cadrez les chiffres</div>
-        </div>
-
-        <!-- AJUSTEMENT ZONE -->
-        <div class="section">
-            <div class="section-title">🎯 AJUSTER LA ZONE</div>
-            <div class="slider-group">
-                <div class="slider-item">
-                    <label>Position haut (%)</label>
-                    <input type="range" id="roiTop" min="0" max="80" value="30" step="1">
-                    <input type="number" id="roiTopNum" min="0" max="80" value="30">
-                </div>
-                <div class="slider-item">
-                    <label>Hauteur (%)</label>
-                    <input type="range" id="roiHeight" min="5" max="50" value="15" step="1">
-                    <input type="number" id="roiHeightNum" min="5" max="50" value="15">
-                </div>
-                <div class="slider-item">
-                    <label>Position gauche (%)</label>
-                    <input type="range" id="roiLeft" min="0" max="80" value="20" step="1">
-                    <input type="number" id="roiLeftNum" min="0" max="80" value="20">
-                </div>
-                <div class="slider-item">
-                    <label>Largeur (%)</label>
-                    <input type="range" id="roiWidth" min="10" max="100" value="60" step="1">
-                    <input type="number" id="roiWidthNum" min="10" max="100" value="60">
-                </div>
-            </div>
-        </div>
-
-        <!-- APERÇU -->
-        <div class="section">
-            <div class="section-title">📷 APERÇU CAPTURÉ</div>
-            <canvas id="preview" width="400" height="100"></canvas>
-        </div>
-
-        <!-- BOUTONS -->
-        <div class="section">
-            <button id="scan">📸 SCANNER</button>
-            <button id="reset">🔄 RESET</button>
-        </div>
-    </div>
+<div style="position:relative">
+<video id="video" autoplay playsinline></video>
+<div class="roi"></div>
 </div>
 
+<div id="weight">----</div>
+<button onclick="scan()">SCAN</button>
+
+<canvas id="canvas" width="400" height="100"></canvas>
+
 <script>
-    const video = document.getElementById('video');
-    const scanBtn = document.getElementById('scan');
-    const resetBtn = document.getElementById('reset');
-    const weight = document.getElementById('weight');
-    const preview = document.getElementById('preview');
-    const info = document.getElementById('info');
-    const roiGuide = document.querySelector('.roi-guide');
 
-    const roiTopInput = document.getElementById('roiTop');
-    const roiTopNum = document.getElementById('roiTopNum');
-    const roiHeightInput = document.getElementById('roiHeight');
-    const roiHeightNum = document.getElementById('roiHeightNum');
-    const roiLeftInput = document.getElementById('roiLeft');
-    const roiLeftNum = document.getElementById('roiLeftNum');
-    const roiWidthInput = document.getElementById('roiWidth');
-    const roiWidthNum = document.getElementById('roiWidthNum');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const weight = document.getElementById('weight');
 
-    let locked = null;
-    let stability = 0;
-    let lastText = null;
-    let roi = { top: 30, height: 15, left: 20, width: 60 };
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+.then(stream => video.srcObject = stream);
 
-    // Sync sliders et inputs
-    roiTopInput.addEventListener('input', (e) => {
-        roi.top = parseInt(e.target.value);
-        roiTopNum.value = roi.top;
-        updateGuide();
-    });
-    roiTopNum.addEventListener('change', (e) => {
-        roi.top = parseInt(e.target.value);
-        roiTopInput.value = roi.top;
-        updateGuide();
-    });
+// =======================
+// PREPROCESSING ULTRA
+// =======================
+function preprocess(imgData) {
+    const d = imgData.data;
 
-    roiHeightInput.addEventListener('input', (e) => {
-        roi.height = parseInt(e.target.value);
-        roiHeightNum.value = roi.height;
-        updateGuide();
-    });
-    roiHeightNum.addEventListener('change', (e) => {
-        roi.height = parseInt(e.target.value);
-        roiHeightInput.value = roi.height;
-        updateGuide();
-    });
+    for (let i = 0; i < d.length; i += 4) {
+        const r = d[i];
+        const g = d[i+1];
+        const b = d[i+2];
 
-    roiLeftInput.addEventListener('input', (e) => {
-        roi.left = parseInt(e.target.value);
-        roiLeftNum.value = roi.left;
-        updateGuide();
-    });
-    roiLeftNum.addEventListener('change', (e) => {
-        roi.left = parseInt(e.target.value);
-        roiLeftInput.value = roi.left;
-        updateGuide();
-    });
+        // 🔴 Isolation LED rouge AMÉLIORÉE
+        const isRed =
+            r > 120 &&
+            g < 80 &&
+            b < 80 &&
+            r > g * 1.5 &&
+            r > b * 1.5;
 
-    roiWidthInput.addEventListener('input', (e) => {
-        roi.width = parseInt(e.target.value);
-        roiWidthNum.value = roi.width;
-        updateGuide();
-    });
-    roiWidthNum.addEventListener('change', (e) => {
-        roi.width = parseInt(e.target.value);
-        roiWidthInput.value = roi.width;
-        updateGuide();
-    });
+        let val = isRed ? 255 : 0;
 
-    function updateGuide() {
-        roiGuide.style.top = roi.top + '%';
-        roiGuide.style.left = roi.left + '%';
-        roiGuide.style.width = roi.width + '%';
-        roiGuide.style.height = roi.height + '%';
+        d[i] = d[i+1] = d[i+2] = val;
     }
 
-    // Caméra
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(stream => {
-            video.srcObject = stream;
-            updateGuide();
-        })
-        .catch(err => {
-            info.innerText = '✗ Erreur caméra: ' + err.message;
-        });
+    return imgData;
+}
 
-    scanBtn.addEventListener('click', () => {
-        if (video.videoWidth === 0) {
-            info.innerText = '✗ Vidéo non prête';
-            return;
+// =======================
+// UPSCALE (TRÈS IMPORTANT)
+// =======================
+function upscale(sourceCanvas) {
+    const big = document.createElement('canvas');
+    big.width = sourceCanvas.width * 2;
+    big.height = sourceCanvas.height * 2;
+
+    const bctx = big.getContext('2d');
+    bctx.imageSmoothingEnabled = false;
+    bctx.drawImage(sourceCanvas, 0, 0, big.width, big.height);
+
+    return big;
+}
+
+// =======================
+// OCR NUMÉRIQUE
+// =======================
+async function readDigits(canvas) {
+    const result = await Tesseract.recognize(
+        canvas,
+        'eng',
+        {
+            tessedit_char_whitelist: '0123456789',
+            tessedit_pageseg_mode: 7
         }
+    );
 
-        scanBtn.disabled = true;
-        info.innerText = '⏳ Traitement...';
+    return result.data.text.replace(/\D/g, '');
+}
 
-        // Capturer la ROI
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-        const x = Math.floor(vw * (roi.left / 100));
-        const y = Math.floor(vh * (roi.top / 100));
-        const w = Math.floor(vw * (roi.width / 100));
-        const h = Math.floor(vh * (roi.height / 100));
+// =======================
+// SCAN
+// =======================
+async function scan() {
 
-        // Canvas de capture
-        const canvas = document.createElement('canvas');
-        canvas.width = 400;
-        canvas.height = 100;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, x, y, w, h, 0, 0, 400, 100);
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
 
-        // Afficher preview
-        const pctx = preview.getContext('2d');
-        pctx.drawImage(canvas, 0, 0, 400, 100);
+    const x = vw * 0.2;
+    const y = vh * 0.3;
+    const w = vw * 0.6;
+    const h = vh * 0.15;
 
-        // Extraire pixels rouges
-        let imgData = ctx.getImageData(0, 0, 400, 100);
-        const data = imgData.data;
+    ctx.drawImage(video, x, y, w, h, 0, 0, 400, 100);
 
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i+1];
-            const b = data[i+2];
+    let imgData = ctx.getImageData(0, 0, 400, 100);
+    imgData = preprocess(imgData);
+    ctx.putImageData(imgData, 0, 0);
 
-            // Détecte LED rouge
-            const isRed = r > 100 && g < 80 && b < 80;
-            
-            const val = isRed ? 255 : 0;
-            data[i] = data[i+1] = data[i+2] = val;
-        }
+    // 🔥 upscale avant OCR
+    const bigCanvas = upscale(canvas);
 
-        ctx.putImageData(imgData, 0, 0);
+    // OCR
+    const text = await readDigits(bigCanvas);
 
-        // Analyser densité par colonne (4 chiffres max)
-        const data2 = imgData.data;
-        let result = '';
-        const colWidth = 400 / 4;
+    if (text) {
+        weight.innerText = text;
+        weight.style.color = "lime";
+    } else {
+        weight.innerText = "----";
+        weight.style.color = "red";
+    }
+}
 
-        for (let col = 0; col < 4; col++) {
-            const x1 = Math.floor(col * colWidth);
-            const x2 = Math.floor((col + 1) * colWidth);
-
-            let whiteCount = 0;
-            let totalCount = 0;
-
-            for (let y = 0; y < 100; y++) {
-                for (let x = x1; x < x2; x++) {
-                    const idx = (y * 400 + x) * 4;
-                    if (data2[idx] > 128) whiteCount++;
-                    totalCount++;
-                }
-            }
-
-            const density = whiteCount / totalCount;
-
-            if (density > 0.02) {
-                if (density < 0.08) result += '1';
-                else if (density < 0.12) result += '7';
-                else if (density < 0.20) result += '4';
-                else if (density < 0.30) result += '0';
-                else if (density < 0.40) result += '6';
-                else if (density < 0.50) result += '9';
-                else result += '8';
-            }
-        }
-
-        result = result.replace(/[^0-9]/g, '');
-
-        if (!result) {
-            weight.innerText = '----';
-            weight.style.color = '#ff0000';
-            info.innerText = '✗ Pas de chiffre détecté';
-            scanBtn.disabled = false;
-            return;
-        }
-
-        if (lastText === result) {
-            stability++;
-        } else {
-            stability = 1;
-            lastText = result;
-        }
-
-        weight.innerText = result;
-        weight.style.color = stability >= 3 ? '#00ff00' : '#ff8888';
-
-        info.innerText = `Résultat: "${result}" | Stabilité: ${stability}/3`;
-        if (stability >= 3) {
-            locked = result;
-            info.innerText += '\n✓ VERROUILLÉ';
-        }
-
-        scanBtn.disabled = false;
-    });
-
-    resetBtn.addEventListener('click', () => {
-        locked = null;
-        stability = 0;
-        lastText = null;
-        weight.innerText = '----';
-        weight.style.color = '#ff0000';
-        info.innerText = 'Réinitialisé';
-    });
-
-    updateGuide();
 </script>
+
 </body>
 </html>
