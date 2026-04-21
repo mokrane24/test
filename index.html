@@ -3,48 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de Chiffres Ultra-Simple</title>
+    <title>Scanner de Chiffres Précis</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: #f4f4f9;
+            background-color: #121212;
+            color: white;
             margin: 0;
             padding: 20px;
         }
-        h2 { color: #333; }
         #container {
             position: relative;
             width: 100%;
             max-width: 400px;
-            border: 5px solid #333;
             border-radius: 15px;
             overflow: hidden;
-            background: #000;
+            border: 4px solid #333;
         }
-        video {
-            width: 100%;
-            display: block;
-        }
-        /* Le rectangle de visée */
+        video { width: 100%; display: block; }
+        
+        /* Rectangle de visée amélioré */
         #overlay {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            width: 250px;
-            height: 100px;
-            border: 3px dashed #00ff00;
-            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
+            width: 240px; height: 80px;
+            border: 3px solid #00ff00;
+            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.7);
             pointer-events: none;
         }
-        .controls {
-            margin-top: 20px;
-        }
+        
+        .controls { margin-top: 20px; width: 100%; text-align: center; }
         button {
-            padding: 15px 30px;
+            padding: 15px 40px;
             font-size: 18px;
             font-weight: bold;
             background-color: #28a745;
@@ -52,23 +46,25 @@
             border: none;
             border-radius: 50px;
             cursor: pointer;
-            transition: 0.3s;
         }
-        button:active { transform: scale(0.95); }
+        
         #result-box {
             margin-top: 20px;
-            padding: 20px;
-            background: white;
+            padding: 15px;
+            background: #222;
             border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            min-width: 200px;
+            width: 250px;
             text-align: center;
+            border: 1px solid #444;
         }
-        #resultat {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: #007bff;
-            display: block;
+        #resultat { font-size: 2.5rem; font-weight: bold; color: #00d4ff; display: block; }
+        
+        /* Petit aperçu pour voir ce que l'API reçoit réellement */
+        #previewCanvas {
+            margin-top: 10px;
+            border: 1px solid #555;
+            background: white;
+            width: 240px;
         }
     </style>
 </head>
@@ -86,26 +82,26 @@
     </div>
 
     <div id="result-box">
-        <span>Résultat détecté :</span>
+        <span style="font-size: 0.9rem; color: #888;">Résultat détecté :</span>
         <span id="resultat">---</span>
     </div>
 
-    <canvas id="canvas" style="display:none;"></canvas>
+    <p style="font-size: 0.8rem; color: #555; margin-top:10px;">Aperçu envoyé à l'API :</p>
+    <canvas id="previewCanvas"></canvas>
 
     <script>
         const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
+        const canvas = document.getElementById('previewCanvas');
         const resultat = document.getElementById('resultat');
         const btnCapture = document.getElementById('btnCapture');
 
         // --- CONFIGURATION ---
-        const API_KEY = 'K87978899088957'; // <--- METS TA CLÉ ICI
+        const API_KEY = 'K87978899088957'; 
 
-        // 1. Démarrer la caméra
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+                    video: { facingMode: 'environment', width: 1280, height: 720 } 
                 });
                 video.srcObject = stream;
             } catch (err) {
@@ -113,54 +109,59 @@
             }
         }
 
-        // 2. Capture et traitement
         btnCapture.addEventListener('click', async () => {
-            resultat.innerText = "Analyse...";
+            resultat.innerText = "...";
+            const ctx = canvas.getContext('2d');
             
-            const context = canvas.getContext('2d');
-            
-            // On définit la taille du canvas selon la vidéo
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            // 1. DÉFINITION DE LA ZONE DE COUPE (CROP)
+            // On définit la zone correspondant au rectangle vert (240x80)
+            const cropW = 240;
+            const cropH = 80;
+            canvas.width = cropW;
+            canvas.height = cropH;
 
-            // --- TRAITEMENT D'IMAGE ---
-            // On applique un filtre pour aider l'OCR (Contraste élevé + Noir et Blanc)
-            context.filter = 'contrast(150%) grayscale(100%)';
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const sourceX = (video.videoWidth - cropW) / 2;
+            const sourceY = (video.videoHeight - cropH) / 2;
 
-            // On convertit en Base64 (JPEG pour la légèreté)
-            const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+            // Dessiner uniquement la partie centrale
+            ctx.drawImage(video, sourceX, sourceY, cropW, cropH, 0, 0, cropW, cropH);
 
-            // 3. Appel à l'API OCR.space
+            // 2. TRAITEMENT PIXEL PAR PIXEL (BINARISATION)
+            const imgData = ctx.getImageData(0, 0, cropW, cropH);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+                const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+                // Si le pixel est gris foncé, on le rend NOIR, sinon BLANC
+                const threshold = 120; 
+                const color = avg < threshold ? 0 : 255;
+                d[i] = d[i+1] = d[i+2] = color;
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            // 3. ENVOI À L'API
+            const base64Image = canvas.toDataURL('image/jpeg', 0.9);
             const formData = new FormData();
             formData.append("base64Image", base64Image);
             formData.append("language", "eng");
             formData.append("apikey", API_KEY);
-            // Mode spécifique pour améliorer la reconnaissance des chiffres
-            formData.append("isTable", "true"); 
-            formData.append("OCREngine", "2"); // Le moteur 2 est souvent meilleur pour les chiffres
+            formData.append("OCREngine", "2"); 
 
             try {
                 const response = await fetch("https://api.ocr.space/parse/image", {
                     method: "POST",
                     body: formData
                 });
-
                 const data = await response.json();
 
                 if (data.ParsedResults && data.ParsedResults.length > 0) {
-                    const texteBrut = data.ParsedResults[0].ParsedText;
-                    
-                    // Nettoyage : On ne garde QUE les chiffres avec une Regex
-                    const chiffresNettoyes = texteBrut.replace(/[^0-9]/g, '');
-                    
-                    resultat.innerText = chiffresNettoyes !== "" ? chiffresNettoyes : "Rien trouvé";
+                    const texte = data.ParsedResults[0].ParsedText;
+                    const chiffres = texte.replace(/[^0-9]/g, '');
+                    resultat.innerText = chiffres !== "" ? chiffres : "Non reconnu";
                 } else {
-                    resultat.innerText = "Erreur API";
+                    resultat.innerText = "Erreur";
                 }
             } catch (error) {
-                resultat.innerText = "Erreur réseau";
-                console.error(error);
+                resultat.innerText = "Réseau HS";
             }
         });
 
