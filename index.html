@@ -2,388 +2,52 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Balance - TensorFlow ML</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
+    <title>Scanner de Chiffres</title>
     <style>
-        body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; }
-        
-        .container { display: flex; flex-direction: column; height: 100vh; }
-        
-        #video { 
-            width: 100%; 
-            height: 50vh; 
-            display: block;
-            position: relative;
-            background: #000;
-        }
-        
-        .roi-guide {
-            position: absolute;
-            top: 30%;
-            left: 20%;
-            width: 60%;
-            height: 15%;
-            border: 3px dashed #00ffff;
-            box-shadow: 0 0 20px #00ffff;
-            pointer-events: none;
-            z-index: 10;
-        }
-        
-        .controls { 
-            background: #0a0a0a;
-            padding: 20px;
-            overflow-y: auto;
-            flex: 1;
-        }
-        
-        .section {
-            margin-bottom: 20px;
-            background: #1a1a1a;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 3px solid #00ffff;
-        }
-        
-        .section-title {
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #00ffff;
-        }
-        
-        #weight { 
-            font-size: 4rem; 
-            font-weight: bold; 
-            color: #00ffff;
-            margin: 20px 0;
-            text-align: center;
-            text-shadow: 0 0 10px #00ffff;
-        }
-        
-        button { 
-            padding: 12px 25px; 
-            font-size: 14px; 
-            background: #00ffff; 
-            color: #000; 
-            border: none; 
-            cursor: pointer; 
-            font-weight: bold;
-            margin: 5px;
-            border-radius: 4px;
-        }
-        
-        button:hover { background: #00ff99; }
-        button:disabled { background: #666; cursor: not-allowed; }
-        
-        canvas { 
-            width: 100%;
-            border: 1px solid #00ffff;
-            margin: 10px 0;
-            background: #000;
-        }
-        
-        #info { 
-            color: #00ffff; 
-            margin-top: 10px; 
-            font-size: 12px;
-            line-height: 1.6;
-        }
-
-        .status {
-            padding: 10px;
-            background: #003333;
-            border-left: 3px solid #00ffff;
-            margin-bottom: 10px;
-            border-radius: 4px;
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid #00ffff;
-            border-radius: 50%;
-            border-top-color: transparent;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        body { font-family: sans-serif; text-align: center; }
+        video, canvas { width: 100%; max-width: 500px; border-radius: 8px; }
+        #result { font-size: 2rem; color: #007bff; font-weight: bold; }
+        .controls { margin: 20px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div style="position: relative;">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="canvas" style="position: absolute; top: 0; left: 0; display: none;"></canvas>
-        <div class="roi-guide"></div>
-    </div>
-
+    <h2>Scan de Chiffres</h2>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    
     <div class="controls">
-        <!-- STATUS -->
-        <div class="status" id="status">
-            ⏳ Chargement TensorFlow... <span class="spinner"></span>
-        </div>
-
-        <!-- RÉSULTAT -->
-        <div class="section">
-            <div class="section-title">📊 POIDS DÉTECTÉ</div>
-            <div id="weight">----</div>
-            <div id="info">Initialisation...</div>
-        </div>
-
-        <!-- APERÇU -->
-        <div class="section">
-            <div class="section-title">📷 APERÇU</div>
-            <canvas id="preview" width="400" height="100"></canvas>
-        </div>
-
-        <!-- BOUTONS -->
-        <div class="section">
-            <button id="scan">📸 SCANNER AUTO</button>
-            <button id="auto-mode">🔄 MODE AUTO (CONTINU)</button>
-            <button id="reset">🔁 RESET</button>
-        </div>
+        <button id="capture">Scanner le chiffre</button>
     </div>
-</div>
 
-<script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const scanBtn = document.getElementById('scan');
-    const autoBtn = document.getElementById('auto-mode');
-    const resetBtn = document.getElementById('reset');
-    const weight = document.getElementById('weight');
-    const preview = document.getElementById('preview');
-    const info = document.getElementById('info');
-    const status = document.getElementById('status');
+    <div id="result">Résultat : ---</div>
 
-    let locked = null;
-    let stability = 0;
-    let lastText = null;
-    let autoMode = false;
-    let modelReady = false;
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const result = document.getElementById('result');
+        const captureBtn = document.getElementById('capture');
 
-    // Initialiser TensorFlow
-    async function initTensorFlow() {
-        try {
-            status.innerHTML = '⏳ Chargement modèle ML... <span class="spinner"></span>';
+        // 1. Accéder à la caméra
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(stream => { video.srcObject = stream; })
+            .catch(err => console.error("Erreur caméra : ", err));
+
+        // 2. Logique de capture
+        captureBtn.addEventListener('click', () => {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Charger le modèle de reconnaissance de chiffres (MNIST)
-            const response = await fetch('https://cdn.jsdelivr.net/npm/tfjs-models/dist/mobilenet/v3/mobilenet_v3_small.json');
-            if (!response.ok) {
-                throw new Error('Modèle non disponible');
-            }
+            // C'est ici qu'on analyse l'image
+            analyserImage(canvas);
+        });
 
-            status.innerHTML = '✓ TensorFlow prêt<br>Cadrez les chiffres et cliquez SCANNER';
-            modelReady = true;
-
-        } catch (e) {
-            console.error('TensorFlow init error:', e);
-            status.innerHTML = '⚠️ Mode simple (pixel analysis)<br>' + e.message;
-            modelReady = true; // Continuer quand même
+        function analyserImage(cvs) {
+            result.innerText = "Analyse en cours...";
+            // Voir options ci-dessous
         }
-    }
-
-    // Caméra
-    navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
-    })
-    .then(stream => {
-        video.srcObject = stream;
-        initTensorFlow();
-    })
-    .catch(err => {
-        status.innerHTML = '✗ Erreur caméra: ' + err.message;
-    });
-
-    // Analyse pixels rouges pour extraction chiffres
-    function analyzeRedPixels() {
-        if (video.videoWidth === 0) {
-            info.innerText = '✗ Vidéo non prête';
-            return null;
-        }
-
-        // Capturer région
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-        const x = Math.floor(vw * 0.2);
-        const y = Math.floor(vh * 0.3);
-        const w = Math.floor(vw * 0.6);
-        const h = Math.floor(vh * 0.15);
-
-        canvas.width = 400;
-        canvas.height = 100;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, x, y, w, h, 0, 0, 400, 100);
-
-        // Afficher preview
-        const pctx = preview.getContext('2d');
-        pctx.drawImage(canvas, 0, 0, 400, 100);
-
-        // Extraire pixels rouges
-        let imgData = ctx.getImageData(0, 0, 400, 100);
-        const data = imgData.data;
-
-        let redPixelCount = 0;
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i+1];
-            const b = data[i+2];
-
-            // Détecte LED rouge: R élevé, G/B bas
-            const isRed = r > 100 && g < 80 && b < 80;
-            
-            const val = isRed ? 255 : 0;
-            data[i] = data[i+1] = data[i+2] = val;
-            if (val > 200) redPixelCount++;
-        }
-
-        ctx.putImageData(imgData, 0, 0);
-
-        // Confidence basée sur quantité de pixels rouges
-        const redDensity = redPixelCount / (400 * 100);
-
-        // Analyser 4 colonnes (4 chiffres)
-        const data2 = imgData.data;
-        let result = '';
-        const colWidth = 400 / 4;
-
-        for (let col = 0; col < 4; col++) {
-            const x1 = Math.floor(col * colWidth);
-            const x2 = Math.floor((col + 1) * colWidth);
-
-            let whiteCount = 0;
-            let totalCount = 0;
-
-            for (let y = 0; y < 100; y++) {
-                for (let x = x1; x < x2; x++) {
-                    const idx = (y * 400 + x) * 4;
-                    if (data2[idx] > 128) whiteCount++;
-                    totalCount++;
-                }
-            }
-
-            const density = whiteCount / totalCount;
-
-            if (density > 0.02) {
-                // Classification par densité
-                if (density < 0.08) result += '1';
-                else if (density < 0.12) result += '7';
-                else if (density < 0.20) result += '4';
-                else if (density < 0.30) result += '0';
-                else if (density < 0.40) result += '6';
-                else if (density < 0.50) result += '9';
-                else result += '8';
-            }
-        }
-
-        result = result.replace(/[^0-9]/g, '');
-
-        return {
-            text: result,
-            confidence: redDensity,
-            redPixels: redPixelCount
-        };
-    }
-
-    // Scan manuel
-    scanBtn.addEventListener('click', async () => {
-        if (!modelReady) {
-            info.innerText = '⏳ Modèle non prêt';
-            return;
-        }
-
-        scanBtn.disabled = true;
-        info.innerText = '⏳ Analyse...';
-
-        const result = analyzeRedPixels();
-
-        if (!result || !result.text) {
-            weight.innerText = '----';
-            weight.style.color = '#ff6666';
-            info.innerText = '✗ Pas de chiffres détectés\nAugmentez la luminosité ou cadrez mieux';
-            scanBtn.disabled = false;
-            return;
-        }
-
-        if (lastText === result.text) {
-            stability++;
-        } else {
-            stability = 1;
-            lastText = result.text;
-        }
-
-        weight.innerText = result.text;
-        weight.style.color = stability >= 3 ? '#00ff00' : '#ffff00';
-
-        info.innerText = `Résultat: "${result.text}"
-Pixels rouges: ${(result.confidence * 100).toFixed(1)}%
-Stabilité: ${stability}/3`;
-
-        if (stability >= 3) {
-            locked = result.text;
-            info.innerText += '\n✓ VERROUILLÉ';
-        }
-
-        scanBtn.disabled = false;
-    });
-
-    // Mode auto (scan continu)
-    autoBtn.addEventListener('click', () => {
-        autoMode = !autoMode;
-        autoBtn.style.background = autoMode ? '#00ff00' : '#00ffff';
-        autoBtn.innerText = autoMode ? '⏸️ ARRÊTER AUTO' : '▶️ MODE AUTO';
-
-        if (autoMode) {
-            autoScan();
-        }
-    });
-
-    async function autoScan() {
-        if (!autoMode || !modelReady) return;
-
-        const result = analyzeRedPixels();
-
-        if (result && result.text) {
-            if (lastText === result.text) {
-                stability++;
-            } else {
-                stability = 1;
-                lastText = result.text;
-            }
-
-            weight.innerText = result.text;
-            weight.style.color = stability >= 3 ? '#00ff00' : '#ffff00';
-            info.innerText = `Auto: "${result.text}" | Stab: ${stability}/3`;
-
-            if (stability >= 3) {
-                locked = result.text;
-            }
-        } else {
-            stability = 0;
-            weight.style.color = '#ff6666';
-        }
-
-        setTimeout(autoScan, 500);
-    }
-
-    resetBtn.addEventListener('click', () => {
-        locked = null;
-        stability = 0;
-        lastText = null;
-        weight.innerText = '----';
-        weight.style.color = '#00ffff';
-        info.innerText = 'Réinitialisé';
-        autoMode = false;
-        autoBtn.style.background = '#00ffff';
-        autoBtn.innerText = '▶️ MODE AUTO';
-    });
-
-</script>
+    </script>
 </body>
 </html>
