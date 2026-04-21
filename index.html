@@ -3,169 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de Chiffres Précis</title>
+    <title>Scanner Pro 100% Chiffres</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #121212;
-            color: white;
-            margin: 0;
-            padding: 20px;
-        }
-        #container {
-            position: relative;
-            width: 100%;
-            max-width: 400px;
-            border-radius: 15px;
-            overflow: hidden;
-            border: 4px solid #333;
-        }
-        video { width: 100%; display: block; }
+        body { font-family: sans-serif; background: #000; color: white; text-align: center; margin: 0; overflow: hidden; }
+        #video { width: 100vw; height: 100vh; object-fit: cover; position: fixed; top: 0; left: 0; }
         
-        /* Rectangle de visée amélioré */
-        #overlay {
-            position: absolute;
-            top: 50%; left: 50%;
+        /* Guide visuel */
+        #guide {
+            position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            width: 240px; height: 80px;
-            border: 3px solid #00ff00;
-            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.7);
-            pointer-events: none;
+            width: 250px; height: 80px;
+            border: 3px solid #00ff00; border-radius: 10px;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.6); z-index: 10;
+        }
+
+        #ui { position: fixed; bottom: 30px; width: 100%; z-index: 20; }
+        button { 
+            padding: 20px 40px; font-size: 1.2rem; font-weight: bold;
+            background: #00ff00; color: #000; border: none; border-radius: 50px; 
+            box-shadow: 0 4px 15px rgba(0,255,0,0.4);
         }
         
-        .controls { margin-top: 20px; width: 100%; text-align: center; }
-        button {
-            padding: 15px 40px;
-            font-size: 18px;
-            font-weight: bold;
-            background-color: #28a745;
-            color: white;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
+        #result-display {
+            position: fixed; top: 40px; width: 100%; z-index: 20;
+            font-size: 3rem; font-weight: bold; color: #00ff00;
+            text-shadow: 2px 2px 10px rgba(0,0,0,1);
         }
-        
-        #result-box {
-            margin-top: 20px;
-            padding: 15px;
-            background: #222;
-            border-radius: 10px;
-            width: 250px;
-            text-align: center;
-            border: 1px solid #444;
-        }
-        #resultat { font-size: 2.5rem; font-weight: bold; color: #00d4ff; display: block; }
-        
-        /* Petit aperçu pour voir ce que l'API reçoit réellement */
-        #previewCanvas {
-            margin-top: 10px;
-            border: 1px solid #555;
-            background: white;
-            width: 240px;
-        }
+
+        canvas { display: none; }
     </style>
 </head>
 <body>
 
-    <h2>Scanner de Chiffres</h2>
+    <div id="result-display">PRÊT</div>
+    
+    <video id="video" autoplay playsinline></video>
+    <div id="guide"></div>
 
-    <div id="container">
-        <video id="video" autoplay playsinline></video>
-        <div id="overlay"></div>
+    <div id="ui">
+        <button id="scanBtn">LIRE LES CHIFFRES</button>
     </div>
 
-    <div class="controls">
-        <button id="btnCapture">SCANNER MAINTENANT</button>
-    </div>
-
-    <div id="result-box">
-        <span style="font-size: 0.9rem; color: #888;">Résultat détecté :</span>
-        <span id="resultat">---</span>
-    </div>
-
-    <p style="font-size: 0.8rem; color: #555; margin-top:10px;">Aperçu envoyé à l'API :</p>
-    <canvas id="previewCanvas"></canvas>
+    <canvas id="cropCanvas"></canvas>
 
     <script>
         const video = document.getElementById('video');
-        const canvas = document.getElementById('previewCanvas');
-        const resultat = document.getElementById('resultat');
-        const btnCapture = document.getElementById('btnCapture');
+        const canvas = document.getElementById('cropCanvas');
+        const resultDisplay = document.getElementById('result-display');
+        const btn = document.getElementById('scanBtn');
 
-        // --- CONFIGURATION ---
-        const API_KEY = 'K87978899088957'; 
+        // 1. Lancer la caméra avec la meilleure résolution possible
+        navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } 
+        }).then(stream => { video.srcObject = stream; });
 
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment', width: 1280, height: 720 } 
-                });
-                video.srcObject = stream;
-            } catch (err) {
-                alert("Erreur caméra : " + err.message);
-            }
+        // 2. Initialiser Tesseract une seule fois pour la vitesse
+        let worker = null;
+        async function initTesseract() {
+            resultDisplay.innerText = "CHARGEMENT...";
+            worker = await Tesseract.createWorker('eng');
+            // CONFIGURATION CRUCIALE : On dit à Tesseract de ne chercher QUE des chiffres
+            await worker.setParameters({
+                tessedit_char_whitelist: '0123456789', 
+            });
+            resultDisplay.innerText = "SCANNER PRÊT";
         }
+        initTesseract();
 
-        btnCapture.addEventListener('click', async () => {
-            resultat.innerText = "...";
+        btn.onclick = async () => {
+            if(!worker) return;
+            resultDisplay.innerText = "ANALYSE...";
+
             const ctx = canvas.getContext('2d');
             
-            // 1. DÉFINITION DE LA ZONE DE COUPE (CROP)
-            // On définit la zone correspondant au rectangle vert (240x80)
-            const cropW = 240;
-            const cropH = 80;
-            canvas.width = cropW;
-            canvas.height = cropH;
+            // On définit la zone de coupe (doit correspondre au rectangle #guide)
+            const w = 500; // Largeur de capture
+            const h = 160; // Hauteur de capture
+            canvas.width = w;
+            canvas.height = h;
 
-            const sourceX = (video.videoWidth - cropW) / 2;
-            const sourceY = (video.videoHeight - cropH) / 2;
+            // Calcul du centre de la vidéo pour le découpage
+            const sx = (video.videoWidth - w) / 2;
+            const sy = (video.videoHeight - h) / 2;
 
-            // Dessiner uniquement la partie centrale
-            ctx.drawImage(video, sourceX, sourceY, cropW, cropH, 0, 0, cropW, cropH);
+            // On dessine juste le centre dans le canvas
+            ctx.drawImage(video, sx, sy, w, h, 0, 0, w, h);
 
-            // 2. TRAITEMENT PIXEL PAR PIXEL (BINARISATION)
-            const imgData = ctx.getImageData(0, 0, cropW, cropH);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-                const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-                // Si le pixel est gris foncé, on le rend NOIR, sinon BLANC
-                const threshold = 120; 
-                const color = avg < threshold ? 0 : 255;
-                d[i] = d[i+1] = d[i+2] = color;
-            }
-            ctx.putImageData(imgData, 0, 0);
+            // OPTIMISATION : On augmente le contraste directement ici
+            ctx.globalCompositeOperation = 'contrast'; 
+            
+            const image = canvas.toDataURL('image/png');
 
-            // 3. ENVOI À L'API
-            const base64Image = canvas.toDataURL('image/jpeg', 0.9);
-            const formData = new FormData();
-            formData.append("base64Image", base64Image);
-            formData.append("language", "eng");
-            formData.append("apikey", API_KEY);
-            formData.append("OCREngine", "2"); 
-
-            try {
-                const response = await fetch("https://api.ocr.space/parse/image", {
-                    method: "POST",
-                    body: formData
-                });
-                const data = await response.json();
-
-                if (data.ParsedResults && data.ParsedResults.length > 0) {
-                    const texte = data.ParsedResults[0].ParsedText;
-                    const chiffres = texte.replace(/[^0-9]/g, '');
-                    resultat.innerText = chiffres !== "" ? chiffres : "Non reconnu";
-                } else {
-                    resultat.innerText = "Erreur";
-                }
-            } catch (error) {
-                resultat.innerText = "Réseau HS";
-            }
-        });
-
-        startCamera();
+            // 3. Reconnaissance
+            const { data: { text } } = await worker.recognize(image);
+            
+            // Nettoyage final
+            const finalDigits = text.trim().replace(/\s/g, '');
+            resultDisplay.innerText = finalDigits || "???";
+        };
     </script>
 </body>
 </html>
