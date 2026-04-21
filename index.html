@@ -3,76 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Debug 1000%</title>
+    <title>Scanner Balance 7-Segments</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #222; color: white; text-align: center; }
-        #video { width: 90%; max-width: 400px; border: 2px solid #555; }
-        .box { border: 2px solid #00ff00; width: 250px; height: 80px; margin: -100px auto 20px auto; position: relative; z-index: 10; pointer-events: none; }
-        #preview { background: white; border: 2px solid red; margin-top: 10px; }
-        #res { font-size: 2rem; color: #00ff00; margin: 20px; min-height: 50px; }
-        button { padding: 15px 30px; font-size: 1rem; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; }
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; margin: 0; }
+        #video { width: 100%; max-width: 500px; border-bottom: 4px solid #28a745; }
+        .scanner-frame {
+            position: absolute; top: 150px; left: 50%; transform: translateX(-50%);
+            width: 280px; height: 100px; border: 3px solid #00ff00; z-index: 10;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.5); pointer-events: none;
+        }
+        #result { font-size: 3rem; color: #00ff00; font-weight: bold; margin: 20px 0; }
+        #preview { background: white; border: 2px solid white; width: 280px; margin-top: 10px; }
+        button { 
+            padding: 20px 50px; font-size: 1.2rem; background: #28a745; 
+            color: white; border: none; border-radius: 50px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body>
 
-    <h2>OCR Debug Mode</h2>
     <video id="video" autoplay playsinline></video>
-    <div class="box"></div>
+    <div class="scanner-frame"></div>
 
-    <div id="res">CHARGEMENT DE L'IA...</div>
+    <div id="result">---</div>
+    <button id="btn">LIRE LE POIDS</button>
 
-    <button id="go">SCANNER LE CADRE</button>
-
-    <p>Ce que l'IA voit (doit être NET et GROS) :</p>
+    <p>Aperçu traité (L'IA doit voir du NOIR sur BLANC) :</p>
     <canvas id="preview"></canvas>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('preview');
-        const res = document.getElementById('res');
-        const btn = document.getElementById('go');
+        const resultDiv = document.getElementById('result');
+        const btn = document.getElementById('btn');
         let worker = null;
 
-        // 1. Initialisation avec vérification
+        // 1. Initialiser Tesseract avec les paramètres "7-segments"
         (async () => {
-            try {
-                worker = await Tesseract.createWorker('eng');
-                await worker.setParameters({
-                    tessedit_char_whitelist: '0123456789',
-                    tessedit_pageseg_mode: '13', // Mode spécial "Single Line"
-                });
-                res.innerText = "IA PRÊTE - PLACEZ UN CHIFFRE";
-            } catch(e) {
-                res.innerText = "ERREUR CHARGEMENT IA";
-            }
+            worker = await Tesseract.createWorker('eng');
+            await worker.setParameters({
+                tessedit_char_whitelist: '0123456789', // Uniquement des chiffres
+                tessedit_pageseg_mode: '7',           // Traiter comme une seule ligne
+            });
+            resultDiv.innerText = "PRÊT";
         })();
 
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 1280 } })
             .then(s => video.srcObject = s);
 
         btn.onclick = async () => {
             if(!worker) return;
-            res.innerText = "LECTURE...";
+            resultDiv.innerText = "ANALYSE...";
 
             const ctx = canvas.getContext('2d');
-            // On capture une zone plus large pour être sûr
-            const w = 400; 
-            const h = 150;
-            canvas.width = w;
-            canvas.height = h;
+            const w = 280; const h = 100;
+            canvas.width = w; canvas.height = h;
 
-            // On découpe le centre de la vidéo
+            // Capture de la zone centrale
             const sx = (video.videoWidth - w) / 2;
             const sy = (video.videoHeight - h) / 2;
-
             ctx.drawImage(video, sx, sy, w, h, 0, 0, w, h);
 
-            // ANALYSE
-            const result = await worker.recognize(canvas);
-            const text = result.data.text.replace(/[^0-9]/g, '');
-            
-            res.innerText = text ? "TROUVÉ : " + text : "RIEN DÉTECTÉ";
+            // --- TRAITEMENT SPÉCIAL LED ROUGE ---
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const data = imgData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];     // Rouge
+                const g = data[i + 1]; // Vert
+                const b = data[i + 2]; // Bleu
+
+                // On isole le ROUGE (puisque tes chiffres sont rouges)
+                // Si le pixel a beaucoup de rouge et peu de vert/bleu : c'est un segment
+                if (r > 100 && r > g * 1.5) {
+                    data[i] = 0; data[i+1] = 0; data[i+2] = 0; // On le rend NOIR
+                } else {
+                    data[i] = 255; data[i+1] = 255; data[i+2] = 255; // Le reste devient BLANC
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            // Analyse du canvas traité
+            const { data: { text } } = await worker.recognize(canvas);
+            const clean = text.replace(/[^0-9]/g, '');
+            resultDiv.innerText = clean || "REESSAYER";
         };
     </script>
 </body>
